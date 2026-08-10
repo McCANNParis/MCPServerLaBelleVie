@@ -4,6 +4,13 @@ export interface SearchOptions {
   page?: number;
   perPage?: number;
   index?: string;
+  /**
+   * Restrict results to a category (and its descendants). The gateway has no
+   * category filter — it silently ignores filter params — so this is applied
+   * on our side AFTER fetching the page (see LbvClient.searchProducts) and is
+   * never sent in the URL.
+   */
+  categoryId?: number;
 }
 
 /**
@@ -38,6 +45,10 @@ export interface Product {
   sellingMethod: string | null;
   maxQuantityByOrder: number | null;
   picture: string | null;
+  /** Direct category ids from the hit (no ancestors — see categories.ts). */
+  categoryIds: number[];
+  /** Category names resolved from the cached tree; [] when the cache is cold. */
+  categories: string[];
 }
 
 export interface SearchResult {
@@ -46,6 +57,13 @@ export interface SearchResult {
   perPage: number;
   totalPages: number;
   products: Product[];
+  /** Set when the caller filtered by category; null on plain searches. */
+  categoryId: number | null;
+  categoryName: string | null;
+  /** Products kept after the category filter (null when unfiltered). */
+  filteredCount: number | null;
+  /** Products the gateway returned for this page before filtering. */
+  scannedCount: number | null;
 }
 
 function num(v: unknown): number | null {
@@ -77,7 +95,17 @@ export function parseProduct(hit: Record<string, unknown>): Product {
     maxQuantityByOrder: num(hit.max_quantity_by_order),
     picture:
       (hit.picture_thumbnail_url as string) ?? (hit.picture as string) ?? null,
+    categoryIds: Array.isArray(hit.categories)
+      ? hit.categories.filter((c): c is number => typeof c === 'number' && Number.isFinite(c))
+      : [],
+    // Name resolution needs the category tree; the client fills these in.
+    categories: [],
   };
+}
+
+/** Keep only products whose direct categories intersect the allowed id set. */
+export function filterByCategoryIds(products: Product[], allowed: Set<number>): Product[] {
+  return products.filter((p) => p.categoryIds.some((id) => allowed.has(id)));
 }
 
 /** Normalize the full search response. */
@@ -89,5 +117,9 @@ export function parseSearchResults(json: Record<string, unknown>): SearchResult 
     perPage: num(json?.perPage) ?? hits.length,
     totalPages: num(json?.total_pages) ?? 1,
     products: hits.map(parseProduct),
+    categoryId: null,
+    categoryName: null,
+    filteredCount: null,
+    scannedCount: null,
   };
 }

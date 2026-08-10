@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildSearchUrl, parseProduct, parseSearchResults } from '../../src/lbv/search';
+import { descendantIdSet, parseCategoryTree } from '../../src/lbv/categories';
+import { buildSearchUrl, filterByCategoryIds, parseProduct, parseSearchResults } from '../../src/lbv/search';
 
 const search = JSON.parse(readFileSync(new URL('../fixtures/search.json', import.meta.url), 'utf8'));
+const categories = JSON.parse(
+  readFileSync(new URL('../fixtures/categories.json', import.meta.url), 'utf8'),
+);
 
 describe('buildSearchUrl', () => {
   it('uses perPage (not hitsPerPage) and the required indexName + alternate params', () => {
@@ -41,6 +45,15 @@ describe('parseSearchResults', () => {
     // stock_quantity is null for primeur/unlimited items → treated as in stock.
     expect(first.stockQuantity).toBeNull();
     expect(first.inStock).toBe(true);
+    // Direct category ids come from the hit; names are resolved later by the
+    // client (the parser stays decoupled from the taxonomy).
+    expect(first.categoryIds).toEqual([74, 547, 1938, 4075]);
+    expect(first.categories).toEqual([]);
+    // Unfiltered searches report no category-filter metadata.
+    expect(result.categoryId).toBeNull();
+    expect(result.categoryName).toBeNull();
+    expect(result.filteredCount).toBeNull();
+    expect(result.scannedCount).toBeNull();
   });
 
   it('every parsed product has a string id and a boolean inStock', () => {
@@ -49,6 +62,34 @@ describe('parseSearchResults', () => {
       expect(p.id.length).toBeGreaterThan(0);
       expect(typeof p.inStock).toBe('boolean');
     }
+  });
+});
+
+describe('filterByCategoryIds', () => {
+  it('separates real bananas from banana-flavored candy (the disambiguation bug)', () => {
+    // "banane" returns 9 fresh bananas plus candy 53365. Filtering by the
+    // "Fruits" category (204) — whose descendant set is {204, 74, 547} —
+    // must keep every banana (they all carry 74) and drop the candy.
+    const tree = parseCategoryTree(categories);
+    const products = parseSearchResults(search).products;
+    const kept = filterByCategoryIds(products, descendantIdSet(tree, 204));
+    expect(kept.map((p) => p.id)).toEqual([
+      '49135',
+      '65478',
+      '4064',
+      '99684',
+      '16967',
+      '99670',
+      '66914',
+      '50225',
+      '48531',
+    ]);
+    expect(kept.map((p) => p.id)).not.toContain('53365');
+  });
+
+  it('keeps nothing when the allowed set does not intersect', () => {
+    const products = parseSearchResults(search).products;
+    expect(filterByCategoryIds(products, new Set([424242]))).toEqual([]);
   });
 });
 
