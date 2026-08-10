@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { descendantIdSet } from '../../src/lbv/categories';
 import { LbvClient } from '../../src/lbv/client';
 
 /**
@@ -28,6 +29,50 @@ describe.skipIf(!LIVE)('live La Belle Vie API (read-only / self-reverting)', () 
     expect(result.products.length).toBeGreaterThan(0);
     expect(result.products[0].id).toBeTruthy();
   });
+
+  it(
+    'loads the category taxonomy and browses it',
+    async () => {
+      const tree = await client.getCategoryTree();
+      expect(tree.roots.length).toBeGreaterThan(20);
+      expect(tree.byId.size).toBeGreaterThan(1000);
+      const primeur = [...tree.byId.values()].find((n) => n.name === 'Primeur');
+      expect(primeur, 'the Primeur aisle should exist').toBeTruthy();
+
+      const roots = await client.browseCategories();
+      expect(roots.mode).toBe('roots');
+      expect(roots.items.length).toBeGreaterThan(20);
+
+      const matches = await client.browseCategories({ query: 'fromage' });
+      expect(matches.mode).toBe('search');
+      expect(matches.items.length).toBeGreaterThan(0);
+      expect(matches.items[0].path?.length).toBeGreaterThan(0);
+    },
+    // The raw taxonomy payload is ~7 MB — the default 5 s timeout is too tight.
+    30_000,
+  );
+
+  it(
+    'category-filtered search excludes keyword false positives',
+    async () => {
+      const tree = await client.getCategoryTree();
+      const primeur = [...tree.byId.values()].find((n) => n.name === 'Primeur');
+      expect(primeur).toBeTruthy();
+      const result = await client.searchProducts('banane', {
+        perPage: 20,
+        categoryId: primeur?.id,
+      });
+      expect(result.categoryName).toBe('Primeur');
+      expect(result.scannedCount).toBeGreaterThan(0);
+      expect(result.filteredCount).toBe(result.products.length);
+      // Every surviving product must sit inside the Primeur subtree.
+      const allowed = descendantIdSet(tree, primeur!.id);
+      for (const p of result.products) {
+        expect(p.categoryIds.some((id) => allowed.has(id))).toBe(true);
+      }
+    },
+    30_000,
+  );
 
   it('reports 75011 (Paris) as served', async () => {
     const coverage = await client.getPostalCoverage('75011');
