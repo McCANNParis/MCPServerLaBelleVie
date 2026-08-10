@@ -52,7 +52,7 @@ Add the deployed endpoint (with the bearer token) to your MCP client.
 **Claude Code:**
 
 ```bash
-claude mcp add --transport http labellevie https://<your-deployment>.vercel.app/mcp \
+claude mcp add --transport http labellevie https://mcp-server-labellevie.vercel.app/mcp \
   --header "Authorization: Bearer $LBV_API_TOKEN"
 ```
 
@@ -63,7 +63,7 @@ claude mcp add --transport http labellevie https://<your-deployment>.vercel.app/
   "mcpServers": {
     "labellevie": {
       "type": "http",
-      "url": "https://<your-deployment>.vercel.app/mcp",
+      "url": "https://mcp-server-labellevie.vercel.app/mcp",
       "headers": { "Authorization": "Bearer <LBV_API_TOKEN>" }
     }
   }
@@ -78,7 +78,7 @@ server.
 ```bash
 npm run build:cli          # produces dist/cli.js (the `lbv` bin)
 
-export LBV_MCP_URL="https://<your-deployment>.vercel.app/mcp"
+export LBV_MCP_URL="https://mcp-server-labellevie.vercel.app/mcp"
 export LBV_API_TOKEN="…"
 
 lbv search "banane bio" --perPage 5
