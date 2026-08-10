@@ -24,9 +24,9 @@ jobs:
       LBV_EMAIL: ${{ secrets.LBV_EMAIL }}
       LBV_PASSWORD: ${{ secrets.LBV_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
