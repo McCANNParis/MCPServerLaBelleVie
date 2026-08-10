@@ -1,0 +1,45 @@
+name: Integration (live)
+
+# Live tests hit the real La Belle Vie API with account credentials, so they are
+# kept OFF the PR merge path (a flaky external API must never block a merge).
+# They run on demand and nightly. All calls are read-only or self-reverting and
+# NEVER touch the payment endpoint.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC nightly
+
+concurrency:
+  group: integration
+  cancel-in-progress: true
+
+jobs:
+  live:
+    name: Live read-only API tests
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      LBV_LIVE: '1'
+      # Secrets are passed as env (never interpolated into a shell command).
+      LBV_EMAIL: ${{ secrets.LBV_EMAIL }}
+      LBV_PASSWORD: ${{ secrets.LBV_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Guard — credentials must be configured
+        run: |
+          if [ -z "$LBV_EMAIL" ] || [ -z "$LBV_PASSWORD" ]; then
+            echo "::error::LBV_EMAIL / LBV_PASSWORD repo secrets are not set."
+            exit 1
+          fi
+
+      - name: Live integration tests
+        run: npm run test:integration

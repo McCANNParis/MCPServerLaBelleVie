@@ -1,0 +1,46 @@
+{
+  "name": "labellevie-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server (+ optional thin CLI) that lets an AI agent do the groceries on labellevie.com — up to a ready-to-pay cart. Payment is never automated.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "lbv": "dist/cli.js"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "build:cli": "tsc -p tsconfig.cli.json && chmod +x dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run tests/unit tests/contract",
+    "test:watch": "vitest",
+    "test:integration": "vitest run tests/integration",
+    "verify-auth": "tsx scripts/verify-auth.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "@upstash/redis": "^1.38.0",
+    "mcp-handler": "^1.1.0",
+    "next": "^15.5.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tough-cookie": "^5.1.2",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.0.0",
+    "eslint": "^9.39.0",
+    "globals": "^15.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^2.1.9"
+  }
+}

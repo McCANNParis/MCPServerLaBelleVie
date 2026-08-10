@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+
+# builds
+.next/
+dist/
+*.tsbuildinfo
+
+# vercel
+.vercel/
+
+# secrets — never commit credentials
+.env
+.env.*
+!.env.example
+
+# test / coverage
+coverage/
+
+# misc
+*.log
+.DS_Store
+
+# Claude Code (local, not for the public repo)
+CLAUDE.md
+.claude/
