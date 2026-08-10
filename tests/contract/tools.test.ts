@@ -40,8 +40,25 @@ const { fakeClient } = vi.hoisted(() => {
             sellingMethod: null,
             maxQuantityByOrder: null,
             picture: null,
+            categoryIds: [74, 547],
+            categories: ['Fruits exotiques', 'Fruits BIO'],
           },
         ],
+        categoryId: null,
+        categoryName: null,
+        filteredCount: null,
+        scannedCount: null,
+      }),
+      browseCategories: async () => ({
+        mode: 'roots',
+        parent: null,
+        items: [
+          { id: 71, name: 'Primeur', productCount: 208, hasChildren: true },
+          { id: 4441, name: 'Epicerie sucrée', productCount: 250, hasChildren: true },
+        ],
+        totalCount: 59,
+        truncated: false,
+        hint: 'Pass an id as parentId to see subcategories, or use it as categoryId in search_products.',
       }),
       getCart: async () => cart,
       prepareCheckout: async (postalCode: string) => ({
@@ -89,6 +106,7 @@ const { registerTools } = await import('../../src/tools');
 
 const EXPECTED_TOOLS = [
   'search_products',
+  'browse_categories',
   'view_cart',
   'add_to_cart',
   'remove_from_cart',
@@ -144,7 +162,14 @@ describe('MCP tool contract', () => {
     }
     const search = tools.find((t) => t.name === 'search_products');
     expect(search?.inputSchema.properties).toHaveProperty('query');
+    expect(search?.inputSchema.properties).toHaveProperty('categoryId');
     expect(search?.inputSchema.required).toContain('query');
+    expect(search?.inputSchema.required ?? []).not.toContain('categoryId');
+    const browse = tools.find((t) => t.name === 'browse_categories');
+    expect(browse?.inputSchema.properties).toHaveProperty('parentId');
+    expect(browse?.inputSchema.properties).toHaveProperty('query');
+    expect(browse?.inputSchema.required ?? []).not.toContain('parentId');
+    expect(browse?.inputSchema.required ?? []).not.toContain('query');
     const add = tools.find((t) => t.name === 'add_to_cart');
     expect(add?.inputSchema.properties).toHaveProperty('productId');
   });
@@ -152,6 +177,13 @@ describe('MCP tool contract', () => {
   it('search_products returns structured results', async () => {
     const res = await client.callTool({ name: 'search_products', arguments: { query: 'banane' } });
     expect(res.structuredContent).toMatchObject({ found: 119, perPage: 10 });
+    expect(res.isError).toBeFalsy();
+  });
+
+  it('browse_categories returns the taxonomy listing', async () => {
+    const res = await client.callTool({ name: 'browse_categories', arguments: {} });
+    expect(res.structuredContent).toMatchObject({ mode: 'roots', totalCount: 59 });
+    expect(JSON.stringify(res.content)).toContain('Primeur');
     expect(res.isError).toBeFalsy();
   });
 

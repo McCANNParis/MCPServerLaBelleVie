@@ -32,7 +32,8 @@ are thin.
 
 | Tool | Auth | What it does |
 |---|---|---|
-| `search_products(query, page?, perPage?)` | — | Search the catalog (id, name, price, unit, stock, sale) |
+| `search_products(query, page?, perPage?, categoryId?)` | — | Search the catalog (id, name, price, unit, stock, sale, categories); `categoryId` keeps only products in that category or its subcategories |
+| `browse_categories(parentId?, query?)` | — | Explore the taxonomy: no args → top-level aisles; `parentId` → subcategories; `query` → find categories by name |
 | `view_cart()` | — | Show the current basket |
 | `add_to_cart(productId, quantity?)` | — | Add a product |
 | `remove_from_cart(productId, quantity?)` | — | Remove / reduce a product |
@@ -44,6 +45,17 @@ are thin.
 | `list_usual_products()` | login | Most-ordered products |
 | `reorder(orderId)` | login | Add every product from a past order into the basket |
 | `prepare_checkout(postalCode, slotKey?)` | — | Ready-to-pay summary (totals, coverage, recommended slot, stock check, basket URL). **Does NOT pay.** |
+
+### How the agent should shop
+
+Keyword search alone can conflate meanings — `search_products("banane")` returns fresh bananas
+**and** banana-flavored candy. When a query is ambiguous (or you want to explore an aisle you don't
+know the French keywords for), call `browse_categories` first: no arguments lists the store's
+top-level aisles, `parentId` drills into one, `query` finds a category by name. Then pass the
+category id as `categoryId` to `search_products` to keep only products in that category (or any of
+its subcategories). The search gateway paginates **before** this filter, so a filtered page reports
+`filteredCount`/`scannedCount` and can legitimately come back empty — try the next page or a
+broader category.
 
 ## Use it from an agent
 
@@ -82,6 +94,10 @@ export LBV_MCP_URL="https://mcp-server-labellevie.vercel.app/mcp"
 export LBV_API_TOKEN="…"
 
 lbv search "banane bio" --perPage 5
+lbv categories                     # top-level aisles
+lbv categories 74                  # subcategories of category 74
+lbv categories --find fromage      # find categories by name
+lbv search banane --category 74    # keyword search filtered to a category
 lbv add 49135 2
 lbv cart
 lbv slots 75011

@@ -1,5 +1,24 @@
 import { LbvHttp, type Credentials, type LbvHttpOptions } from './http';
-import { buildSearchUrl, parseSearchResults, type SearchOptions, type SearchResult } from './search';
+import {
+  buildSearchUrl,
+  filterByCategoryIds,
+  parseSearchResults,
+  type SearchOptions,
+  type SearchResult,
+} from './search';
+import {
+  MAX_CATEGORY_LIST,
+  MAX_CATEGORY_MATCHES,
+  descendantIdSet,
+  findByName,
+  getCategoryTree as loadCategoryTree,
+  getChildren,
+  pathTo,
+  peekCategoryTree,
+  resolveNames,
+  type CategoryNode,
+  type CategoryTree,
+} from './categories';
 import { buildCartPayload, parseCart, type Cart } from './cart';
 import {
   buildPostalInfoPath,
@@ -28,6 +47,25 @@ import {
   type Address,
   type Profile,
 } from './profile';
+
+export interface CategorySummary {
+  id: number;
+  name: string;
+  productCount: number;
+  hasChildren: boolean;
+  /** Root-first breadcrumb; present on search matches and browse parents. */
+  path?: string[];
+}
+
+export interface BrowseCategoriesResult {
+  mode: 'roots' | 'children' | 'search';
+  parent: CategorySummary | null;
+  items: CategorySummary[];
+  /** True number of roots/children/matches, even when items is capped. */
+  totalCount: number;
+  truncated: boolean;
+  hint: string;
+}
 
 export interface ReorderResult {
   orderId: string;
@@ -69,11 +107,115 @@ export class LbvClient {
     return new LbvClient({ ...opts, credentials });
   }
 
-  // --- Search (public) ----------------------------------------------------
+  // --- Search & catalog (public) ------------------------------------------
   async searchProducts(query: string, opts: SearchOptions = {}): Promise<SearchResult> {
     const url = buildSearchUrl(query, opts);
     const json = await this.http.getJson<Record<string, unknown>>(url, { xhr: false, accept: 'application/json' });
-    return parseSearchResults(json);
+    const result = parseSearchResults(json);
+
+    if (opts.categoryId === undefined) {
+      // Plain search must stay fast: enrich names only if a tree is already
+      // cached — never wait on the taxonomy fetch here.
+      const tree = peekCategoryTree();
+      if (tree) {
+        for (const p of result.products) p.categories = resolveNames(tree, p.categoryIds);
+      }
+      return result;
+    }
+
+    const tree = await this.getCategoryTree();
+    const node = tree.byId.get(opts.categoryId);
+    if (!node) {
+      throw new Error(
+        `Unknown categoryId ${opts.categoryId}. Call browse_categories to find valid category ids.`,
+      );
+    }
+    // The gateway paginates BEFORE our filter, so a page can legitimately
+    // come back empty even when `found` is large.
+    result.scannedCount = result.products.length;
+    result.products = filterByCategoryIds(result.products, descendantIdSet(tree, node.id));
+    result.filteredCount = result.products.length;
+    result.categoryId = node.id;
+    result.categoryName = node.name;
+    for (const p of result.products) p.categories = resolveNames(tree, p.categoryIds);
+    return result;
+  }
+
+  /** Load (or reuse) the cached category taxonomy. */
+  async getCategoryTree(forceRefresh = false): Promise<CategoryTree> {
+    try {
+      return await loadCategoryTree(this.http, { forceRefresh });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Could not load the category taxonomy (${detail}). You can still use search_products without categoryId.`,
+      );
+    }
+  }
+
+  /**
+   * Browse the store's category taxonomy: no args → top-level aisles;
+   * parentId → its subcategories; query → name search with breadcrumbs.
+   */
+  async browseCategories(
+    opts: { parentId?: number; query?: string } = {},
+  ): Promise<BrowseCategoriesResult> {
+    const tree = await this.getCategoryTree();
+    const summarize = (n: CategoryNode, withPath = false): CategorySummary => ({
+      id: n.id,
+      name: n.name,
+      productCount: n.productCount,
+      hasChildren: n.hasChildren,
+      ...(withPath ? { path: pathTo(tree, n.id) } : {}),
+    });
+
+    if (opts.query !== undefined && opts.query.trim() !== '') {
+      const matches = findByName(tree, opts.query);
+      const items = matches
+        .slice(0, MAX_CATEGORY_MATCHES)
+        .map((m) => ({ ...summarize(m), path: m.path }));
+      return {
+        mode: 'search',
+        parent: null,
+        items,
+        totalCount: matches.length,
+        truncated: matches.length > items.length,
+        hint: 'Use a match id as categoryId in search_products, or as parentId here to browse its subcategories.',
+      };
+    }
+
+    if (opts.parentId !== undefined) {
+      const parent = tree.byId.get(opts.parentId);
+      if (!parent) {
+        throw new Error(
+          `Unknown category id ${opts.parentId}. Call browse_categories with no arguments to list top-level categories.`,
+        );
+      }
+      const children = getChildren(tree, parent.id);
+      const items = children.slice(0, MAX_CATEGORY_LIST).map((c) => summarize(c));
+      return {
+        mode: 'children',
+        parent: summarize(parent, true),
+        items,
+        totalCount: children.length,
+        truncated: children.length > items.length,
+        hint:
+          children.length === 0
+            ? 'This category has no subcategories — use its id as categoryId in search_products.'
+            : 'Use an id as categoryId in search_products, or as parentId here to go deeper.',
+      };
+    }
+
+    const roots = getChildren(tree, null);
+    const items = roots.slice(0, MAX_CATEGORY_LIST).map((c) => summarize(c));
+    return {
+      mode: 'roots',
+      parent: null,
+      items,
+      totalCount: roots.length,
+      truncated: roots.length > items.length,
+      hint: 'Pass an id as parentId to see subcategories, or use it as categoryId in search_products.',
+    };
   }
 
   // --- Cart (works anonymously; auto-logs-in if credentials are set) -------

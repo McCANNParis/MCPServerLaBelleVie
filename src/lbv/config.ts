@@ -36,3 +36,6 @@ export const USER_AGENT =
 
 /** Default session TTL (seconds) for the cookie jar stored in KV/Redis. */
 export const SESSION_TTL_SECONDS = 60 * 60 * 6; // 6 hours
+
+/** How long the in-memory category tree is trusted before re-fetching. */
+export const CATEGORY_TREE_TTL_SECONDS = 60 * 60 * 8; // 8 hours
