@@ -2,6 +2,7 @@ export * from './config';
 export * from './errors';
 export * from './http';
 export * from './search';
+export * from './categories';
 export * from './cart';
 export * from './slots';
 export * from './promo';

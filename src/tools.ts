@@ -47,28 +47,77 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Search products',
       description:
-        'Search the La Belle Vie catalog by keyword. Returns matching products with id, name, price, unit, stock and sale info. Use the returned product id with add_to_cart.',
+        'Search the La Belle Vie catalog by keyword. Returns matching products with id, name, price, unit, stock, sale info and category names. Use the returned product id with add_to_cart. Keyword search can conflate meanings (e.g. "banane" returns fresh bananas AND banana-flavored candy) — pass a categoryId from browse_categories to keep only products in that category (and its subcategories).',
       inputSchema: {
         query: z.string().min(1).describe('Search keywords, e.g. "banane bio"'),
         page: z.number().int().min(1).optional().describe('1-based page number'),
         perPage: z.number().int().min(1).max(100).optional().describe('Results per page (default 25)'),
+        categoryId: z
+          .number()
+          .int()
+          .optional()
+          .describe('Category id from browse_categories; keeps only products in it or its subcategories'),
       },
     },
-    async ({ query, page, perPage }) =>
+    async ({ query, page, perPage, categoryId }) =>
       runTool(false, async () => {
-        const result = await withClient((c) => c.searchProducts(query, { page, perPage }));
+        const result = await withClient((c) => c.searchProducts(query, { page, perPage, categoryId }));
         const lines = result.products
           .slice(0, 25)
           .map(
             (p) =>
               `• [${p.id}] ${p.name} — ${euro(p.price)}${p.bio ? ' (bio)' : ''}${
                 p.inStock ? '' : ' — OUT OF STOCK'
-              }`,
+              }${p.categories.length ? ` — ${p.categories.join(', ')}` : ''}`,
           )
           .join('\n');
+        let text = `Found ${result.found} product(s) for "${query}" (page ${result.page}/${result.totalPages}).`;
+        if (result.categoryId !== null) {
+          text += `\nFiltered to "${result.categoryName}" [${result.categoryId}]: ${result.filteredCount}/${result.scannedCount} scanned product(s) matched.`;
+          if (result.filteredCount === 0) {
+            text +=
+              ' The gateway paginates before this filter — try a later page, drop categoryId, or pick another category via browse_categories.';
+          }
+        }
+        text += '\n' + (lines || '(no products)');
+        return ok(text, { ...result });
+      }),
+  );
+
+  server.registerTool(
+    'browse_categories',
+    {
+      title: 'Browse categories',
+      description:
+        "Explore the store's category taxonomy. No arguments → the top-level aisles (Primeur, Fromagerie, Épicerie…); parentId → that category's subcategories; query → find categories by name (accent-insensitive) with breadcrumb paths. Use a returned id as categoryId in search_products to filter results.",
+      inputSchema: {
+        parentId: z.number().int().optional().describe('Category id whose subcategories to list'),
+        query: z.string().min(1).optional().describe('Find categories by name, e.g. "fromage"'),
+      },
+    },
+    async ({ parentId, query }) =>
+      runTool(false, async () => {
+        const result = await withClient((c) => c.browseCategories({ parentId, query }));
+        const title =
+          result.mode === 'roots'
+            ? `${result.totalCount} top-level categorie(s).`
+            : result.mode === 'children'
+              ? `${result.totalCount} subcategorie(s) of "${result.parent?.name}" [${result.parent?.id}].`
+              : `${result.totalCount} categorie(s) matching "${query}".`;
+        const lines = result.items
+          .map((i) => {
+            const path = i.path && i.path.length > 1 ? ` — ${i.path.join(' > ')}` : '';
+            return `• [${i.id}] ${i.name} — ${i.productCount} product(s)${
+              i.hasChildren ? ' (has subcategories)' : ''
+            }${path}`;
+          })
+          .join('\n');
         const text =
-          `Found ${result.found} product(s) for "${query}" (page ${result.page}/${result.totalPages}).\n` +
-          (lines || '(no products)');
+          title +
+          (result.truncated ? ` Showing the first ${result.items.length}.` : '') +
+          '\n' +
+          (lines || '(none)') +
+          `\n${result.hint}`;
         return ok(text, { ...result });
       }),
   );
