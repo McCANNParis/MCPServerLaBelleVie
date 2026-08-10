@@ -12,15 +12,15 @@ summary**. It is built on the private JSON API the website itself uses (backend:
 ## How it works
 
 ```
-Claude / agent ──MCP (Streamable HTTP + bearer)──┐
-                                                  ├─▶ Vercel: MCP server  (/mcp)
-lbv CLI (thin MCP client) ──MCP (bearer)──────────┘        mcp-handler + withMcpAuth
-                                                           tool handlers ─▶ src/lbv/* core
-                                                                    │
-                                                   credentials in Vercel env,
-                                                   cookie-jar session in Vercel KV
-                                                                    ▼
-                                              labellevie.com  +  search.deleev.com
+Claude connector ──MCP (OAuth via Descope, email OTP)──┐
+                                                        ├─▶ Vercel: MCP server  (/mcp)
+lbv CLI / agent ──MCP (static bearer LBV_API_TOKEN)─────┘        mcp-handler + withMcpAuth
+                                                                 tool handlers ─▶ src/lbv/* core
+                                                                          │
+                                                         credentials in Vercel env,
+                                                         cookie-jar session in Vercel KV
+                                                                          ▼
+                                                    labellevie.com  +  search.deleev.com
 ```
 
 Both the agent and the CLI speak MCP to the **same** deployed server. Your La Belle Vie login lives
@@ -59,7 +59,20 @@ broader category.
 
 ## Use it from an agent
 
-Add the deployed endpoint (with the bearer token) to your MCP client.
+Two independent auth paths hit the same `/mcp` endpoint: **OAuth** (Descope, for Claude
+Desktop/claude.ai connectors) and a **static bearer token** (for the CLI and any MCP client that
+supports headers).
+
+**Claude Desktop / claude.ai (OAuth custom connector):**
+
+1. Settings → Connectors → **Add custom connector** → URL `https://mcp-server-labellevie.vercel.app/mcp`.
+2. Click **Connect** — a Descope sign-in opens. Enter the allow-listed email and the one-time code
+   it receives.
+3. Approve the consent screen; the tools appear.
+
+Sign-in is by **email one-time code** and access is restricted server-side to a single allow-listed
+address (`LBV_ALLOWED_EMAIL`): any other account — even one that completes the Descope flow — is
+rejected with a 401. Self-registration is blocked in Descope besides.
 
 **Claude Code:**
 
@@ -120,7 +133,7 @@ npx @modelcontextprotocol/inspector      # point it at http://localhost:3000/mcp
 LBV_MCP_URL=http://localhost:3000/mcp LBV_API_TOKEN=dev-token lbv search "lait"
 ```
 
-Health check (no auth): `GET /api/health` reports liveness and whether credentials / KV are
+Health check (no auth): `GET /api/health` reports liveness and whether credentials / OAuth / KV are
 configured (it never returns secrets).
 
 ## Environment variables
@@ -132,6 +145,10 @@ tests — `.env.local` is gitignored):
 |---|---|
 | `LBV_EMAIL`, `LBV_PASSWORD` | Your La Belle Vie login (server-side only) |
 | `LBV_API_TOKEN` | Bearer token checked by the server; also given to the agent / CLI |
+| `DESCOPE_PROJECT_ID` | Descope project id — enables the OAuth path (not a secret) |
+| `LBV_ALLOWED_EMAIL` | **The OAuth security boundary**: only a token with this email claim is accepted (fail-closed) |
+| `DESCOPE_BASE_URL` | Optional Descope regional base URL (default `https://api.descope.com`) |
+| `DESCOPE_MANAGEMENT_KEY` | Local `descope` CLI only — **never** on Vercel, never committed |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV (session cookie cache). Falls back to in-memory if unset. |
 | `REDIS_URL` | Optional — backs `mcp-handler` SSE resumability |
 | `LBV_MCP_URL` | CLI only — the server URL (default `http://localhost:3000/mcp`) |
@@ -183,7 +200,9 @@ npm run test:integration     # opt-in live tests — needs LBV_LIVE=1 + LBV_EMAI
 Deployment uses Vercel's native Git integration (one-time setup):
 
 1. Import this repo into a Vercel project.
-2. Set the environment variables above (`LBV_EMAIL`, `LBV_PASSWORD`, `LBV_API_TOKEN`, KV).
+2. Set the environment variables above (`LBV_EMAIL`, `LBV_PASSWORD`, `LBV_API_TOKEN`,
+   `DESCOPE_PROJECT_ID`, `LBV_ALLOWED_EMAIL`, KV). Env changes only apply to **new** deployments —
+   redeploy after adding them.
 3. Add a Vercel KV (Upstash Redis) store to the project.
 4. Push `dev` → **Preview** deploy; PR `dev` → `main` → **Production** deploy.
 

@@ -1,3 +1,4 @@
+import { hasOAuthConfig } from '../../../src/auth';
 import { hasCredentials } from '../../../src/runtime';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,7 @@ export function GET(): Response {
     config: {
       credentials: hasCredentials(),
       apiToken: Boolean(process.env.LBV_API_TOKEN),
+      oauth: hasOAuthConfig(),
       sessionStore:
         process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL
           ? 'kv'
