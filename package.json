@@ -23,6 +23,7 @@
     "verify-auth": "tsx scripts/verify-auth.ts"
   },
   "dependencies": {
+    "@descope/node-sdk": "^2.14.0",
     "@modelcontextprotocol/sdk": "1.26.0",
     "@upstash/redis": "^1.38.0",
     "mcp-handler": "^1.1.0",
