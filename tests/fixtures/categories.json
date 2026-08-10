@@ -1,0 +1,164 @@
+[
+  {
+    "id": 1522,
+    "name": "Promos, lots & produits OFFERTS",
+    "depth": 0,
+    "direct_parent_id": null,
+    "is_active": true,
+    "is_major": false,
+    "number_of_products": 0,
+    "total_number_of_products": 143,
+    "has_children": true,
+    "descendent": [
+      {
+        "id": 16819,
+        "name": "Les fruits et légumes de la semaine",
+        "depth": 1,
+        "direct_parent_id": 1522,
+        "is_active": true,
+        "number_of_products": 143,
+        "total_number_of_products": 143,
+        "has_children": false,
+        "descendent": []
+      }
+    ]
+  },
+  {
+    "id": 71,
+    "name": "Primeur",
+    "depth": 0,
+    "direct_parent_id": null,
+    "is_active": true,
+    "is_major": true,
+    "number_of_products": 0,
+    "total_number_of_products": 208,
+    "has_children": true,
+    "descendent": [
+      {
+        "id": 204,
+        "name": "Fruits",
+        "depth": 1,
+        "direct_parent_id": 71,
+        "is_active": true,
+        "number_of_products": 0,
+        "total_number_of_products": 65,
+        "has_children": true,
+        "descendent": [
+          {
+            "id": 74,
+            "name": "Fruits exotiques",
+            "depth": 2,
+            "direct_parent_id": 204,
+            "is_active": true,
+            "number_of_products": 37,
+            "total_number_of_products": 37,
+            "has_children": false,
+            "descendent": []
+          },
+          {
+            "id": 547,
+            "name": "Fruits BIO",
+            "depth": 2,
+            "direct_parent_id": 204,
+            "is_active": true,
+            "number_of_products": 28,
+            "total_number_of_products": 28,
+            "has_children": false,
+            "descendent": []
+          }
+        ]
+      },
+      {
+        "id": 16819,
+        "name": "Les fruits et légumes de la semaine",
+        "depth": 1,
+        "direct_parent_id": 71,
+        "is_active": true,
+        "number_of_products": 143,
+        "total_number_of_products": 143,
+        "has_children": false,
+        "descendent": []
+      }
+    ]
+  },
+  {
+    "id": 4441,
+    "name": "Epicerie sucrée",
+    "depth": 0,
+    "direct_parent_id": null,
+    "is_active": true,
+    "is_major": true,
+    "number_of_products": 0,
+    "total_number_of_products": 250,
+    "has_children": true,
+    "descendent": [
+      {
+        "id": 4975,
+        "name": "Bonbons",
+        "depth": 1,
+        "direct_parent_id": 4441,
+        "is_active": true,
+        "number_of_products": 0,
+        "total_number_of_products": 47,
+        "has_children": true,
+        "descendent": [
+          {
+            "id": 5675,
+            "name": "Bonbons goût fruits et plantes",
+            "depth": 2,
+            "direct_parent_id": 4975,
+            "is_active": true,
+            "number_of_products": 47,
+            "total_number_of_products": 47,
+            "has_children": false,
+            "descendent": []
+          }
+        ]
+      },
+      {
+        "id": 2319,
+        "name": "Bonbons",
+        "depth": 1,
+        "direct_parent_id": 4441,
+        "is_active": true,
+        "number_of_products": 203,
+        "total_number_of_products": 203,
+        "has_children": false,
+        "descendent": []
+      }
+    ]
+  },
+  {
+    "id": 3700,
+    "name": "Pâtisserie",
+    "depth": 0,
+    "direct_parent_id": null,
+    "is_active": true,
+    "is_major": true,
+    "number_of_products": 30,
+    "total_number_of_products": 30,
+    "has_children": false,
+    "descendent": []
+  },
+  {
+    "id": 3700,
+    "name": "Pâtisserie",
+    "depth": 0,
+    "direct_parent_id": null,
+    "is_active": true,
+    "number_of_products": 30,
+    "total_number_of_products": 30,
+    "has_children": false,
+    "descendent": []
+  },
+  {
+    "id": "not-a-number",
+    "name": "Broken node without a numeric id",
+    "descendent": []
+  },
+  {
+    "id": 999999,
+    "name": "",
+    "descendent": []
+  }
+]

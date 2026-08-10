@@ -63,6 +63,15 @@ function resolveCommand(cmd: string, rest: string[], flags: Parsed['flags']): To
           query: rest.join(' '),
           page: num(flags.page),
           perPage: num(flags.perPage),
+          categoryId: num(flags.category),
+        },
+      };
+    case 'categories':
+      return {
+        name: 'browse_categories',
+        arguments: {
+          parentId: num(rest[0]),
+          query: typeof flags.find === 'string' ? flags.find : undefined,
         },
       };
     case 'cart':
@@ -99,7 +108,8 @@ const USAGE = `lbv — do the groceries on labellevie.com via the MCP server
 Usage: lbv <command> [args] [--json]
 
 Commands:
-  search <query> [--page N] [--perPage N]  Search the catalog
+  search <query> [--page N] [--perPage N] [--category ID]  Search the catalog
+  categories [parentId] [--find name]      Browse the category taxonomy
   cart                                     Show the current basket
   add <productId> [qty]                    Add a product to the basket
   remove <productId> [qty]                 Remove (or reduce) a product
