@@ -1,6 +1,5 @@
-import { timingSafeEqual } from 'node:crypto';
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { createMcpHandler, withMcpAuth } from 'mcp-handler';
+import { verifyToken } from '../../src/auth';
 import { registerTools } from '../../src/tools';
 
 // Streamable-HTTP MCP endpoint. With basePath '' the transport segment lives at
@@ -21,25 +20,8 @@ const handler = createMcpHandler(
   },
 );
 
-/** Constant-time bearer-token comparison. */
-function tokenMatches(provided: string, expected: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-/**
- * Verify the bearer token against LBV_API_TOKEN. Returning undefined makes
- * withMcpAuth reject the request (401) when `required: true`.
- */
-const verifyToken = async (_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> => {
-  const expected = process.env.LBV_API_TOKEN;
-  if (!expected || !bearerToken) return undefined;
-  if (!tokenMatches(bearerToken, expected)) return undefined;
-  return { token: bearerToken, scopes: ['groceries'], clientId: 'lbv-agent' };
-};
-
+// Dual auth (static LBV_API_TOKEN + Descope OAuth with email allowlist) lives
+// in src/auth.ts. Both paths surface scopes: ['groceries'].
 const authHandler = withMcpAuth(handler, verifyToken, {
   required: true,
   requiredScopes: ['groceries'],
