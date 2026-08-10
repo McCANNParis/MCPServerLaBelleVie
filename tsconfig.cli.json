@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "dist",
+    "rootDir": ".",
+    "incremental": false,
+    "jsx": "react-jsx",
+    "plugins": [],
+    "types": ["node"]
+  },
+  "include": ["cli.ts"],
+  "exclude": ["node_modules", ".next", "tests", "app", "src"]
+}
