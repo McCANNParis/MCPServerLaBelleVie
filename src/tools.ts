@@ -1,22 +1,34 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, IsomorphicHeaders } from '@modelcontextprotocol/sdk/types.js';
+import { getPublicOrigin } from 'mcp-handler';
 import { z } from 'zod';
-import { LbvApiError, LbvAuthError } from './lbv/errors';
-import { hasCredentials, withClient } from './runtime';
+import { deleteConnection, getConnection, hasConnection } from './connections';
+import { hasCredKey } from './crypto';
+import { identityFor } from './identity';
+import { LINK_CODE_TTL_SECONDS } from './lbv/config';
+import { LbvApiError, LbvAuthError, LbvNotAuthenticatedError } from './lbv/errors';
+import { createLinkCode } from './links';
+import { withClient } from './runtime';
+import { getSessionStore, sessionKeyFor } from './session';
 
-/** Wrap a tool body with consistent error formatting. */
+/** Friendly nudge when an account action is attempted before connecting. */
+function notConnected(): CallToolResult {
+  return ok(
+    'Your La Belle Vie account is not connected yet. Call connect_account to get a one-time secure link — your password is never sent through this chat.',
+  );
+}
+
+/** Wrap a tool body with the connection gate and consistent error formatting. */
 async function runTool(
   requiresAuth: boolean,
+  identity: string,
   body: () => Promise<CallToolResult>,
 ): Promise<CallToolResult> {
-  if (requiresAuth && !hasCredentials()) {
-    return fail(
-      'This action requires a logged-in account, but LBV_EMAIL / LBV_PASSWORD are not configured on the server.',
-    );
-  }
+  if (requiresAuth && !(await hasConnection(identity))) return notConnected();
   try {
     return await body();
   } catch (err) {
+    if (err instanceof LbvNotAuthenticatedError) return notConnected();
     if (err instanceof LbvAuthError) return fail(`Login failed: ${err.message}`);
     if (err instanceof LbvApiError) return fail(`La Belle Vie API error (${err.status}): ${err.message}`);
     return fail(err instanceof Error ? err.message : String(err));
@@ -35,6 +47,21 @@ function fail(message: string): CallToolResult {
 
 function euro(v: number | null): string {
   return v === null ? '—' : `€${v.toFixed(2)}`;
+}
+
+/**
+ * Rebuild the public origin of the server from the headers the MCP transport
+ * captured for this tool call, so connect links point at the host the client
+ * actually reached (localhost in dev, the deployment URL behind Vercel).
+ */
+function originFromHeaders(headers: IsomorphicHeaders | undefined): string {
+  const h = new Headers();
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (Array.isArray(value)) for (const v of value) h.append(name, v);
+    else if (typeof value === 'string') h.set(name, value);
+  }
+  const host = h.get('host') ?? 'localhost:3000';
+  return getPublicOrigin(new Request(`http://${host}/mcp`, { headers: h }));
 }
 
 /**
@@ -59,9 +86,10 @@ export function registerTools(server: McpServer): void {
           .describe('Category id from browse_categories; keeps only products in it or its subcategories'),
       },
     },
-    async ({ query, page, perPage, categoryId }) =>
-      runTool(false, async () => {
-        const result = await withClient((c) => c.searchProducts(query, { page, perPage, categoryId }));
+    async ({ query, page, perPage, categoryId }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const result = await withClient(identity, (c) => c.searchProducts(query, { page, perPage, categoryId }));
         const lines = result.products
           .slice(0, 25)
           .map(
@@ -81,7 +109,8 @@ export function registerTools(server: McpServer): void {
         }
         text += '\n' + (lines || '(no products)');
         return ok(text, { ...result });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -95,9 +124,10 @@ export function registerTools(server: McpServer): void {
         query: z.string().min(1).optional().describe('Find categories by name, e.g. "fromage"'),
       },
     },
-    async ({ parentId, query }) =>
-      runTool(false, async () => {
-        const result = await withClient((c) => c.browseCategories({ parentId, query }));
+    async ({ parentId, query }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const result = await withClient(identity, (c) => c.browseCategories({ parentId, query }));
         const title =
           result.mode === 'roots'
             ? `${result.totalCount} top-level categorie(s).`
@@ -119,7 +149,8 @@ export function registerTools(server: McpServer): void {
           (lines || '(none)') +
           `\n${result.hint}`;
         return ok(text, { ...result });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -129,15 +160,17 @@ export function registerTools(server: McpServer): void {
       description: 'Show the current basket: line items, quantities and totals.',
       inputSchema: {},
     },
-    async () =>
-      runTool(false, async () => {
-        const cart = await withClient((c) => c.getCart());
+    async (_args, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const cart = await withClient(identity, (c) => c.getCart());
         const lines = cart.lines.map((l) => `• ${l.quantity}× [${l.productId}] ${l.name} — ${euro(l.linePrice)}`).join('\n');
         const text =
           `Cart: ${cart.itemCount} item(s), subtotal ${euro(cart.subtotal)} (to pay ${euro(cart.finalPriceToPay ?? cart.priceToPay)}).\n` +
           (lines || '(empty)');
         return ok(text, { ...cart });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -150,13 +183,15 @@ export function registerTools(server: McpServer): void {
         quantity: z.number().int().min(1).optional().describe('Quantity to add (default 1)'),
       },
     },
-    async ({ productId, quantity }) =>
-      runTool(false, async () => {
-        const cart = await withClient((c) => c.addToCart(productId, quantity ?? 1));
+    async ({ productId, quantity }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const cart = await withClient(identity, (c) => c.addToCart(productId, quantity ?? 1));
         return ok(`Added ${quantity ?? 1}× [${productId}]. Cart now has ${cart.itemCount} item(s), subtotal ${euro(cart.subtotal)}.`, {
           ...cart,
         });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -169,11 +204,13 @@ export function registerTools(server: McpServer): void {
         quantity: z.number().int().min(1).optional().describe('Quantity to remove (default 1)'),
       },
     },
-    async ({ productId, quantity }) =>
-      runTool(false, async () => {
-        const cart = await withClient((c) => c.removeFromCart(productId, quantity ?? 1));
+    async ({ productId, quantity }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const cart = await withClient(identity, (c) => c.removeFromCart(productId, quantity ?? 1));
         return ok(`Removed ${quantity ?? 1}× [${productId}]. Cart now has ${cart.itemCount} item(s).`, { ...cart });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -183,11 +220,13 @@ export function registerTools(server: McpServer): void {
       description: 'Remove all items from the basket.',
       inputSchema: {},
     },
-    async () =>
-      runTool(false, async () => {
-        const cart = await withClient((c) => c.emptyCart());
+    async (_args, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const cart = await withClient(identity, (c) => c.emptyCart());
         return ok(`Cart emptied. ${cart.itemCount} item(s) remain.`, { ...cart });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -197,14 +236,16 @@ export function registerTools(server: McpServer): void {
       description: 'Check whether a French postal code is served, with base shipping fee and free-shipping threshold.',
       inputSchema: { postalCode: z.string().describe('French postal code, e.g. "75011"') },
     },
-    async ({ postalCode }) =>
-      runTool(false, async () => {
-        const coverage = await withClient((c) => c.getPostalCoverage(postalCode));
+    async ({ postalCode }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const coverage = await withClient(identity, (c) => c.getPostalCoverage(postalCode));
         const text = coverage.covered
           ? `${postalCode} (${coverage.cityName ?? '?'}) is served. Shipping ${euro(coverage.shippingFee)}, free from ${euro(coverage.freeShippingFrom)}.`
           : `${postalCode} does not appear to be served.`;
         return ok(text, { ...coverage });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -216,9 +257,10 @@ export function registerTools(server: McpServer): void {
         postalCode: z.string().describe('French postal code, e.g. "75011"'),
       },
     },
-    async ({ postalCode }) =>
-      runTool(false, async () => {
-        const { slots, deliveryWarning } = await withClient((c) => c.getSlots(postalCode));
+    async ({ postalCode }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const { slots, deliveryWarning } = await withClient(identity, (c) => c.getSlots(postalCode));
         const lines = slots
           .map((s) => `• [${s.key}] ${s.text} — fee ${euro(s.fee)}${s.isFree ? ' (free)' : ''}`)
           .join('\n');
@@ -226,54 +268,61 @@ export function registerTools(server: McpServer): void {
           `${slots.length} delivery slot(s) for ${postalCode}${deliveryWarning ? ` — ${deliveryWarning}` : ''}.\n` +
           (lines || '(none)');
         return ok(text, { slots, deliveryWarning });
-      }),
+      });
+    },
   );
 
   server.registerTool(
     'verify_promo',
     {
       title: 'Verify promo code',
-      description: 'Check whether a promo code is valid for the account (requires login).',
+      description: 'Check whether a promo code is valid for the account (requires a connected account).',
       inputSchema: { code: z.string().min(1).describe('Promo code to verify') },
     },
-    async ({ code }) =>
-      runTool(true, async () => {
-        const result = await withClient((c) => c.verifyPromo(code));
+    async ({ code }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(true, identity, async () => {
+        const result = await withClient(identity, (c) => c.verifyPromo(code));
         const text = result.valid
           ? `Promo "${code}" is valid${result.discount !== null ? ` (discount ${result.discount})` : ''}.`
           : `Promo "${code}" is not valid${result.message ? `: ${result.message}` : ''}.`;
         return ok(text, { ...result });
-      }),
+      });
+    },
   );
 
   server.registerTool(
     'list_recent_orders',
     {
       title: 'List recent orders',
-      description: 'List the account\'s recent orders (ids + dates + totals) to use as reorder sources (requires login).',
+      description: 'List the account\'s recent orders (ids + dates + totals) to use as reorder sources (requires a connected account).',
       inputSchema: {},
     },
-    async () =>
-      runTool(true, async () => {
-        const orders = await withClient((c) => c.listRecentOrders());
+    async (_args, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(true, identity, async () => {
+        const orders = await withClient(identity, (c) => c.listRecentOrders());
         const lines = orders.map((o) => `• [${o.id}] ${o.date ?? '?'} — ${euro(o.total)}`).join('\n');
         return ok(`${orders.length} recent order(s).\n` + (lines || '(none)'), { orders });
-      }),
+      });
+    },
   );
 
   server.registerTool(
     'list_usual_products',
     {
       title: 'List usual products',
-      description: 'List the account\'s most frequently ordered products (requires login).',
+      description: 'List the account\'s most frequently ordered products (requires a connected account).',
       inputSchema: {},
     },
-    async () =>
-      runTool(true, async () => {
-        const products = await withClient((c) => c.listUsualProducts());
+    async (_args, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(true, identity, async () => {
+        const products = await withClient(identity, (c) => c.listUsualProducts());
         const lines = products.map((p) => `• [${p.productId}] ${p.name ?? ''} (usual qty ${p.quantity})`).join('\n');
         return ok(`${products.length} usual product(s).\n` + (lines || '(none)'), { products });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -281,18 +330,20 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Reorder a past order',
       description:
-        'Add every product from a past order into the current basket (requires login). Use list_recent_orders to find an order id. Does not place or pay for the order.',
+        'Add every product from a past order into the current basket (requires a connected account). Use list_recent_orders to find an order id. Does not place or pay for the order.',
       inputSchema: { orderId: z.string().describe('Order id from list_recent_orders') },
     },
-    async ({ orderId }) =>
-      runTool(true, async () => {
-        const result = await withClient((c) => c.reorder(orderId));
+    async ({ orderId }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(true, identity, async () => {
+        const result = await withClient(identity, (c) => c.reorder(orderId));
         const text =
           `Reordered order ${orderId}: added ${result.added.length}/${result.requested.length} product(s)` +
           (result.failed.length ? `, ${result.failed.length} failed` : '') +
           `. Cart subtotal ${euro(result.cart.subtotal)}.`;
         return ok(text, { ...result });
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -306,9 +357,10 @@ export function registerTools(server: McpServer): void {
         slotKey: z.string().optional().describe('Preferred delivery slot key from get_delivery_slots'),
       },
     },
-    async ({ postalCode, slotKey }) =>
-      runTool(false, async () => {
-        const s = await withClient((c) => c.prepareCheckout(postalCode, slotKey));
+    async ({ postalCode, slotKey }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const s = await withClient(identity, (c) => c.prepareCheckout(postalCode, slotKey));
         const slot = s.recommendedSlot
           ? `${s.recommendedSlot.text} (fee ${euro(s.recommendedSlot.fee)}${s.recommendedSlot.reachesFreeShipping ? ', qualifies for free delivery' : ''})`
           : 'none available';
@@ -321,6 +373,92 @@ export function registerTools(server: McpServer): void {
           ...s.notes.map((n) => `• ${n}`),
         ].join('\n');
         return ok(text, { ...s });
-      }),
+      });
+    },
+  );
+
+  server.registerTool(
+    'connect_account',
+    {
+      title: 'Connect your La Belle Vie account',
+      description:
+        'Get a one-time secure link to a login page where you enter your La Belle Vie email and password yourself — credentials never pass through this chat. The link is short-lived and single-use. Completing it replaces any previously connected account.',
+      inputSchema: {},
+    },
+    async (_args, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        if (!hasCredKey()) {
+          return fail(
+            'The server cannot store account connections: LBV_CRED_KEY is not configured. Ask the server operator to set it (generate with: openssl rand -hex 32) and redeploy.',
+          );
+        }
+        const existing = await getConnection(identity);
+        const { code, expiresAt } = await createLinkCode(identity);
+        const url = `${originFromHeaders(extra.requestInfo?.headers)}/connect/${code}`;
+        const lines = [
+          'Open this link to connect your La Belle Vie account:',
+          '',
+          url,
+          '',
+          `It expires in ${Math.round(LINK_CODE_TTL_SECONDS / 60)} minutes and works once. Your password is entered on that page directly — it is never sent through this chat.`,
+        ];
+        if (existing) {
+          lines.push(`Note: completing it will replace the currently connected account (${existing.lbvEmail}).`);
+        }
+        return ok(lines.join('\n'), { url, expiresAt });
+      });
+    },
+  );
+
+  server.registerTool(
+    'connection_status',
+    {
+      title: 'Connection status',
+      description: 'Show whether a La Belle Vie account is connected for this caller, and which one.',
+      inputSchema: {},
+    },
+    async (_args, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const connection = await getConnection(identity);
+        if (!connection) {
+          return ok(
+            'No La Belle Vie account is connected. Call connect_account to get a one-time secure link.',
+            { connected: false },
+          );
+        }
+        const since = new Date(connection.connectedAt).toISOString().slice(0, 10);
+        return ok(`Connected as ${connection.lbvEmail} since ${since}.`, {
+          connected: true,
+          lbvEmail: connection.lbvEmail,
+          connectedAt: connection.connectedAt,
+          lastUsedAt: connection.lastUsedAt,
+        });
+      });
+    },
+  );
+
+  server.registerTool(
+    'disconnect_account',
+    {
+      title: 'Disconnect account',
+      description:
+        'Disconnect the La Belle Vie account for this caller and delete its stored (encrypted) credentials and session.',
+      inputSchema: {},
+    },
+    async (_args, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(false, identity, async () => {
+        const existed = await deleteConnection(identity);
+        await getSessionStore().clear(sessionKeyFor(identity));
+        return ok(
+          existed
+            ? 'Your La Belle Vie account has been disconnected and its stored credentials deleted.'
+            : 'No La Belle Vie account was connected.',
+          { disconnected: existed },
+        );
+      });
+    },
   );
 }

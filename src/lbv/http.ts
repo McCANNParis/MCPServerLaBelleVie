@@ -5,7 +5,7 @@ import {
   CSRF_VALUE_SALT,
   USER_AGENT,
 } from './config';
-import { LbvApiError, LbvAuthError, extractApiError } from './errors';
+import { LbvApiError, LbvAuthError, LbvNotAuthenticatedError, extractApiError } from './errors';
 
 export interface Credentials {
   email: string;
@@ -19,6 +19,12 @@ export interface LbvHttpOptions {
   fetchImpl?: typeof fetch;
   /** Credentials used for the initial login and for auto re-login on 4xx. */
   credentials?: Credentials;
+  /**
+   * Trust a hydrated jar as already-authenticated: skips the eager login
+   * handshake in ensureLoggedIn(). The reactive re-login-on-4xx still covers
+   * the case where that trust turns out to be wrong.
+   */
+  assumeLoggedIn?: boolean;
   /** Override the base site URL (tests). */
   baseUrl?: string;
 }
@@ -76,6 +82,7 @@ export class LbvHttp {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.baseUrl = opts.baseUrl ?? BASE_URL;
     this.credentials = opts.credentials;
+    this.loggedIn = opts.assumeLoggedIn ?? false;
   }
 
   hasCredentials(): boolean {
@@ -191,7 +198,8 @@ export class LbvHttp {
   /** Ensure a session exists; log in if we have credentials and aren't yet in. */
   async ensureLoggedIn(): Promise<void> {
     if (this.loggedIn) return;
-    if (this.credentials) await this.login();
+    if (!this.credentials) throw new LbvNotAuthenticatedError();
+    await this.login();
   }
 
   private async parseJson<T>(res: Response, path: string): Promise<T> {
