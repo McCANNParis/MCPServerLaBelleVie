@@ -19,16 +19,23 @@ const { validateSession, descopeFactory } = vi.hoisted(() => {
 vi.mock('@descope/node-sdk', () => ({ default: descopeFactory }));
 
 const STATIC_TOKEN = 'a'.repeat(64);
-const ENV_KEYS = ['LBV_API_TOKEN', 'DESCOPE_PROJECT_ID', 'DESCOPE_BASE_URL', 'LBV_ALLOWED_EMAIL'] as const;
+const ENV_KEYS = [
+  'LBV_API_TOKEN',
+  'DESCOPE_PROJECT_ID',
+  'DESCOPE_BASE_URL',
+  'LBV_ALLOWED_EMAIL',
+  'LBV_ALLOWED_SUBJECT',
+] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 const req = new Request('http://localhost/mcp');
 
-/** Fully configured dual-auth baseline; individual tests unset keys as needed. */
+/** Email-allowlist baseline; individual tests unset or add keys as needed. */
 function configureEnv(): void {
   process.env.LBV_API_TOKEN = STATIC_TOKEN;
   process.env.DESCOPE_PROJECT_ID = 'P2testProjectId';
   process.env.LBV_ALLOWED_EMAIL = 'redacted@example.com';
+  delete process.env.LBV_ALLOWED_SUBJECT;
   delete process.env.DESCOPE_BASE_URL;
 }
 
@@ -111,11 +118,37 @@ describe('verifyToken — Descope path', () => {
     expect(await verifyToken(req, 'descope-jwt')).toBeUndefined();
   });
 
-  it('fails closed when LBV_ALLOWED_EMAIL is unset — no network call', async () => {
+  it('fails closed when neither LBV_ALLOWED_EMAIL nor LBV_ALLOWED_SUBJECT is set — no network call', async () => {
     delete process.env.LBV_ALLOWED_EMAIL;
     grantSession({ email: 'redacted@example.com' });
     expect(await verifyToken(req, 'descope-jwt')).toBeUndefined();
     expect(validateSession).not.toHaveBeenCalled();
+  });
+
+  it('accepts a token whose sub matches LBV_ALLOWED_SUBJECT even without an email claim', async () => {
+    process.env.LBV_ALLOWED_SUBJECT = 'U2allowedUser';
+    grantSession({ sub: 'U2allowedUser', azp: 'TPA2client' });
+    const auth = await verifyToken(req, 'descope-jwt');
+    expect(auth).toMatchObject({ scopes: ['groceries'], extra: { sub: 'U2allowedUser' } });
+  });
+
+  it('accepts via subject alone when LBV_ALLOWED_EMAIL is unset', async () => {
+    delete process.env.LBV_ALLOWED_EMAIL;
+    process.env.LBV_ALLOWED_SUBJECT = 'U2allowedUser';
+    grantSession({ sub: 'U2allowedUser' });
+    expect(await verifyToken(req, 'descope-jwt')).toBeDefined();
+  });
+
+  it('rejects when the sub differs and no email claim matches', async () => {
+    process.env.LBV_ALLOWED_SUBJECT = 'U2allowedUser';
+    grantSession({ sub: 'U2someoneElse', email: 'intruder@example.com' });
+    expect(await verifyToken(req, 'descope-jwt')).toBeUndefined();
+  });
+
+  it('still accepts by email when the sub does not match the configured subject', async () => {
+    process.env.LBV_ALLOWED_SUBJECT = 'U2allowedUser';
+    grantSession({ sub: 'U2rotatedId', email: 'redacted@example.com' });
+    expect(await verifyToken(req, 'descope-jwt')).toBeDefined();
   });
 
   it('skips the Descope path entirely when DESCOPE_PROJECT_ID is unset', async () => {
@@ -143,10 +176,12 @@ describe('verifyToken — Descope path', () => {
 });
 
 describe('hasOAuthConfig', () => {
-  it('is true only when both DESCOPE_PROJECT_ID and LBV_ALLOWED_EMAIL are set', () => {
+  it('requires DESCOPE_PROJECT_ID plus at least one allowlist key', () => {
     expect(hasOAuthConfig()).toBe(true);
     delete process.env.LBV_ALLOWED_EMAIL;
     expect(hasOAuthConfig()).toBe(false);
+    process.env.LBV_ALLOWED_SUBJECT = 'U2allowedUser';
+    expect(hasOAuthConfig()).toBe(true);
     configureEnv();
     delete process.env.DESCOPE_PROJECT_ID;
     expect(hasOAuthConfig()).toBe(false);
