@@ -227,9 +227,9 @@ npm run test:integration     # opt-in live tests — needs LBV_LIVE=1 + LBV_EMAI
   `main`.
 - **`.github/workflows/ci.yml`** (push/PR to `dev` & `main`): install → lint → typecheck → test →
   build. Fully mocked, no secrets — this is the merge gate.
-- **`.github/workflows/integration.yml`** (manual + nightly): runs the live tests with the repo
-  secrets `LBV_EMAIL` / `LBV_PASSWORD`. Kept off the PR path so a flaky external API never blocks a
-  merge.
+- **`.github/workflows/integration.yml`** (manual, via *Run workflow*): runs the live tests with the
+  repo secrets `LBV_EMAIL` / `LBV_PASSWORD`. Kept off the PR path so a flaky external API never
+  blocks a merge.
 
 ### Deploy (Vercel)
 
