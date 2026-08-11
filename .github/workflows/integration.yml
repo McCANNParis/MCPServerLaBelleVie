@@ -2,12 +2,11 @@ name: Integration (live)
 
 # Live tests hit the real La Belle Vie API with account credentials, so they are
 # kept OFF the PR merge path (a flaky external API must never block a merge).
-# They run on demand and nightly. All calls are read-only or self-reverting and
+# They run on demand only (workflow_dispatch) and need the LBV_EMAIL /
+# LBV_PASSWORD repo secrets. All calls are read-only or self-reverting and
 # NEVER touch the payment endpoint.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 3 * * *' # 03:00 UTC nightly
 
 concurrency:
   group: integration
