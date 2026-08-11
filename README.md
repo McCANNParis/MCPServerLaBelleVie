@@ -154,6 +154,9 @@ lbv --help
 
 ## Local development
 
+**Requires Node 24+** (`engines.node: ">=24"`) — the same version CI and the Vercel runtime use.
+The stack is Next 16 (App Router), `mcp-handler` v2, MCP SDK v2 and zod 4.
+
 ```bash
 npm install
 npm run dev                  # Next.js dev server → http://localhost:3000/mcp
@@ -225,10 +228,10 @@ npm run test:integration     # opt-in live tests — needs LBV_LIVE=1 + LBV_EMAI
 - **`main`** = production (protected), **`dev`** = staging. Flow: feature branch → PR → `dev` → PR →
   `main`.
 - **`.github/workflows/ci.yml`** (push/PR to `dev` & `main`): install → lint → typecheck → test →
-  build. Fully mocked, no secrets — this is the merge gate.
+  build, on **Node 24**. Fully mocked, no secrets — this is the merge gate.
 - **`.github/workflows/integration.yml`** (manual, via *Run workflow*): runs the live tests with the
-  repo secrets `LBV_EMAIL` / `LBV_PASSWORD`. Kept off the PR path so a flaky external API never
-  blocks a merge.
+  repo secrets `LBV_EMAIL` / `LBV_PASSWORD`, also on Node 24. Kept off the PR path so a flaky
+  external API never blocks a merge.
 
 ### Deploy (Vercel)
 
@@ -242,6 +245,9 @@ Deployment uses Vercel's native Git integration (one-time setup):
 3. Add a Vercel KV (Upstash Redis) store to the project (required for the connect flow).
 4. Push `dev` → **Preview** deploy; PR `dev` → `main` → **Production** deploy.
 5. From each MCP client, run `connect_account` once and complete the browser login.
+
+Vercel picks the function runtime from `engines.node` in `package.json` (**Node 24**) — no runtime
+setting to configure in the dashboard.
 
 Add the same `LBV_EMAIL` / `LBV_PASSWORD` as **GitHub Actions secrets** to enable the integration
 workflow.
