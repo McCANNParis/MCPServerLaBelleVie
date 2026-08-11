@@ -37,5 +37,12 @@ export const USER_AGENT =
 /** Default session TTL (seconds) for the cookie jar stored in KV/Redis. */
 export const SESSION_TTL_SECONDS = 60 * 60 * 6; // 6 hours
 
+/** Rolling TTL for a connected account record (refreshed on every use). */
+export const CONNECTION_TTL_SECONDS = 60 * 60 * 24 * 90; // 90 days
+
+/** Lifetime of a one-time connect link, and wrong-password attempts allowed. */
+export const LINK_CODE_TTL_SECONDS = 60 * 10; // 10 minutes
+export const LINK_MAX_ATTEMPTS = 5;
+
 /** How long the in-memory category tree is trusted before re-fetching. */
 export const CATEGORY_TREE_TTL_SECONDS = 60 * 60 * 8; // 8 hours

@@ -1,26 +1,7 @@
 import { CookieJar } from 'tough-cookie';
+import { decryptCredentials, getConnection, saveConnection } from './connections';
 import { LbvClient } from './lbv/client';
-import type { Credentials } from './lbv/http';
-import { getSessionStore, sessionKeyForEmail } from './session';
-
-export interface LbvConfig {
-  email?: string;
-  password?: string;
-}
-
-/** Read La Belle Vie credentials from the environment. */
-export function getConfig(): LbvConfig {
-  return { email: process.env.LBV_EMAIL, password: process.env.LBV_PASSWORD };
-}
-
-export function getCredentials(): Credentials | undefined {
-  const { email, password } = getConfig();
-  return email && password ? { email, password } : undefined;
-}
-
-export function hasCredentials(): boolean {
-  return !!getCredentials();
-}
+import { getSessionStore, sessionKeyFor } from './session';
 
 function hydrateJar(serialized: unknown | null): CookieJar {
   if (serialized) {
@@ -34,24 +15,37 @@ function hydrateJar(serialized: unknown | null): CookieJar {
 }
 
 /**
- * Run an operation against a session-backed LbvClient. The cookie jar is
- * loaded from the session store before the call and saved after, so a login
- * performed on one invocation is reused by the next.
+ * Run an operation against a session-backed LbvClient acting as `identity`.
+ * With a connected account, the client gets the stored authenticated jar plus
+ * decrypted credentials for transparent re-login; otherwise an anonymous
+ * per-identity jar (guest cart). The jar is saved back after the call, so a
+ * login performed on one invocation is reused by the next.
  */
-export async function withClient<T>(fn: (client: LbvClient) => Promise<T>): Promise<T> {
-  const credentials = getCredentials();
+export async function withClient<T>(
+  identity: string,
+  fn: (client: LbvClient) => Promise<T>,
+): Promise<T> {
   const store = getSessionStore();
-  const key = credentials ? sessionKeyForEmail(credentials.email) : 'lbv:session:anon';
+  const connection = await getConnection(identity);
+  const anonKey = sessionKeyFor(identity);
 
-  const serialized = await store.load(key);
+  const serialized = connection ? connection.jar : await store.load(anonKey);
   const jar = hydrateJar(serialized);
-  const client = new LbvClient({ credentials, jar });
+  // undefined when LBV_CRED_KEY is missing/rotated — the client then behaves
+  // as not-authenticated and auth-required tools ask the user to reconnect.
+  const credentials = connection ? decryptCredentials(connection) : undefined;
+  const client = new LbvClient({ credentials, jar, assumeLoggedIn: Boolean(credentials) });
 
   try {
     return await fn(client);
   } finally {
     try {
-      await store.save(key, client.http.serializeJar());
+      const savedJar = client.http.serializeJar();
+      if (connection) {
+        await saveConnection(identity, { ...connection, jar: savedJar, lastUsedAt: Date.now() });
+      } else {
+        await store.save(anonKey, savedJar);
+      }
     } catch {
       // Persisting the session is best-effort; never fail the operation on it.
     }

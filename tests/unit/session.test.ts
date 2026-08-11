@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { getSessionStore, sessionKeyForEmail, setSessionStore } from '../../src/session';
+import { getSessionStore, sessionKeyFor, setSessionStore } from '../../src/session';
 
 const KV_VARS = [
   'KV_REST_API_URL',
@@ -45,18 +45,18 @@ describe('getSessionStore (in-memory fallback)', () => {
   });
 });
 
-describe('sessionKeyForEmail', () => {
+describe('sessionKeyFor', () => {
   it('is deterministic and namespaced', () => {
-    const key = sessionKeyForEmail('shopper@example.com');
-    expect(key).toBe(sessionKeyForEmail('shopper@example.com'));
+    const key = sessionKeyFor('sub:U2abc123');
+    expect(key).toBe(sessionKeyFor('sub:U2abc123'));
     expect(key.startsWith('lbv:session:')).toBe(true);
   });
 
-  it('does not embed the raw email address', () => {
-    expect(sessionKeyForEmail('shopper@example.com')).not.toContain('shopper@example.com');
+  it('does not embed the raw identity', () => {
+    expect(sessionKeyFor('email:shopper@example.com')).not.toContain('shopper@example.com');
   });
 
-  it('separates distinct emails', () => {
-    expect(sessionKeyForEmail('a@example.com')).not.toBe(sessionKeyForEmail('b@example.com'));
+  it('separates distinct identities', () => {
+    expect(sessionKeyFor('sub:a')).not.toBe(sessionKeyFor('sub:b'));
   });
 });

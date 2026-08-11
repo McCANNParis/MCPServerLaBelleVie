@@ -97,8 +97,7 @@ const { fakeClient } = vi.hoisted(() => {
 });
 
 vi.mock('../../src/runtime', () => ({
-  hasCredentials: () => true,
-  withClient: (fn: (c: unknown) => Promise<unknown>) => fn(fakeClient),
+  withClient: (_identity: string, fn: (c: unknown) => Promise<unknown>) => fn(fakeClient),
 }));
 
 // Imported after vi.mock so registerTools binds to the mocked runtime.
@@ -118,6 +117,9 @@ const EXPECTED_TOOLS = [
   'list_usual_products',
   'reorder',
   'prepare_checkout',
+  'connect_account',
+  'connection_status',
+  'disconnect_account',
 ];
 
 async function connect() {
