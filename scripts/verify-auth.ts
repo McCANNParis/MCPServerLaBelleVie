@@ -64,7 +64,9 @@ async function main(): Promise<void> {
     console.log(`  Signed in as: ${[profile.firstName, profile.lastName].filter(Boolean).join(' ')}`);
   }
 
-  console.log('\nAuth works. Set LBV_EMAIL / LBV_PASSWORD as Vercel environment variables to deploy.');
+  console.log(
+    '\nAuth works. On the deployed server, connect this account with the connect_account tool — these env vars stay local.',
+  );
 }
 
 main().catch((err: unknown) => {

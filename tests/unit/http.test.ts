@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CSRF_NAME_SALT, CSRF_VALUE_SALT } from '../../src/lbv/config';
-import { LbvApiError, LbvAuthError } from '../../src/lbv/errors';
+import { LbvApiError, LbvAuthError, LbvNotAuthenticatedError } from '../../src/lbv/errors';
 import { LbvHttp, parseCsrf, saltCsrf } from '../../src/lbv/http';
 
 /** Minimal login form as rendered on the homepage, exercising both attribute orders. */
@@ -100,5 +100,38 @@ describe('LbvHttp auto re-login', () => {
     await expect(http.getJson('/api/fullprofile')).rejects.toBeInstanceOf(LbvApiError);
     // Only the single failing call — no homepage/connexion handshake.
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('ensureLoggedIn', () => {
+  it('throws LbvNotAuthenticatedError when no credentials are available', async () => {
+    const http = new LbvHttp({ fetchImpl: makeFakeFetch([]) as typeof fetch });
+    await expect(http.ensureLoggedIn()).rejects.toBeInstanceOf(LbvNotAuthenticatedError);
+  });
+
+  it('performs the login handshake once when credentials are present', async () => {
+    const calls: Call[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeFakeFetch(calls) as typeof fetch,
+      credentials: { email: 'shopper@example.com', password: 's3cret' },
+    });
+    await http.ensureLoggedIn();
+    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+      'GET /',
+      'POST /connexion',
+    ]);
+    await http.ensureLoggedIn(); // already in — no extra calls
+    expect(calls).toHaveLength(2);
+  });
+
+  it('assumeLoggedIn trusts the hydrated jar and skips the eager handshake', async () => {
+    const calls: Call[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeFakeFetch(calls) as typeof fetch,
+      credentials: { email: 'shopper@example.com', password: 's3cret' },
+      assumeLoggedIn: true,
+    });
+    await http.ensureLoggedIn();
+    expect(calls).toHaveLength(0);
   });
 });
