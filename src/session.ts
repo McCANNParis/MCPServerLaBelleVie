@@ -1,4 +1,5 @@
 import { Redis } from '@upstash/redis';
+import { hashIdentity } from './identity';
 import { SESSION_TTL_SECONDS } from './lbv/config';
 
 /**
@@ -63,12 +64,7 @@ export function setSessionStore(store: SessionStore | null): void {
   cached = store;
 }
 
-/** Namespaced session key for a given account email. */
-export function sessionKeyForEmail(email: string): string {
-  // Avoid putting the raw email in the key; a light hash is enough for namespacing.
-  let hash = 0;
-  for (let i = 0; i < email.length; i++) {
-    hash = (hash * 31 + email.charCodeAt(i)) | 0;
-  }
-  return `lbv:session:${(hash >>> 0).toString(16)}`;
+/** Namespaced cookie-jar key for a caller identity (raw value never embedded). */
+export function sessionKeyFor(identity: string): string {
+  return `lbv:session:${hashIdentity(identity)}`;
 }

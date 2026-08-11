@@ -96,6 +96,12 @@ function resolveCommand(cmd: string, rest: string[], flags: Parsed['flags']): To
       return { name: 'reorder', arguments: { orderId: rest[0] } };
     case 'checkout':
       return { name: 'prepare_checkout', arguments: { postalCode: rest[0], slotKey: rest[1] } };
+    case 'connect':
+      return { name: 'connect_account', arguments: {} };
+    case 'status':
+      return { name: 'connection_status', arguments: {} };
+    case 'disconnect':
+      return { name: 'disconnect_account', arguments: {} };
     default:
       throw new UsageError(`Unknown command: ${cmd || '(none)'}`);
   }
@@ -116,11 +122,14 @@ Commands:
   empty                                    Empty the basket
   coverage <postalCode>                    Check delivery coverage
   slots <postalCode>                       List delivery slots
-  promo <code>                             Verify a promo code (requires login)
-  orders                                   List recent orders (requires login)
-  usuals                                   List usual products (requires login)
-  reorder <orderId>                        Add a past order into the basket (requires login)
+  promo <code>                             Verify a promo code (needs connected account)
+  orders                                   List recent orders (needs connected account)
+  usuals                                   List usual products (needs connected account)
+  reorder <orderId>                        Add a past order into the basket (needs connected account)
   checkout <postalCode> [slotKey]          Ready-to-pay summary (does NOT pay)
+  connect                                  Get a one-time link to connect your LBV account
+  status                                   Show which LBV account is connected
+  disconnect                               Disconnect and delete stored credentials
 
 Options:
   --json     Print the structured JSON result instead of text
