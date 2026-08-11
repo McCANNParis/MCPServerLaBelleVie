@@ -253,3 +253,7 @@ workflow.
   personal use and gently rate-limited. Undocumented endpoints can change without notice; `/api/health`
   helps flag breakage early.
 - Payment is out of scope by design — the tool stops at a ready basket and you complete payment.
+
+## License
+
+[MIT](LICENSE)
