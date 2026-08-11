@@ -34,7 +34,7 @@ const req = new Request('http://localhost/mcp');
 function configureEnv(): void {
   process.env.LBV_API_TOKEN = STATIC_TOKEN;
   process.env.DESCOPE_PROJECT_ID = 'P2testProjectId';
-  process.env.LBV_ALLOWED_EMAIL = 'bernard.pierrejean@gmail.com';
+  process.env.LBV_ALLOWED_EMAIL = 'allowed@example.com';
   delete process.env.LBV_ALLOWED_SUBJECT;
   delete process.env.DESCOPE_BASE_URL;
 }
@@ -85,25 +85,25 @@ describe('verifyToken — static path', () => {
 
 describe('verifyToken — Descope path', () => {
   it('accepts a valid token whose email claim matches the allowlist', async () => {
-    grantSession({ sub: 'U2abc', azp: 'TPA2client', email: 'bernard.pierrejean@gmail.com', exp: 1900000000 });
+    grantSession({ sub: 'U2abc', azp: 'TPA2client', email: 'allowed@example.com', exp: 1900000000 });
     const auth = await verifyToken(req, 'descope-jwt');
     expect(auth).toMatchObject({
       token: 'descope-jwt',
       scopes: ['groceries'],
       clientId: 'TPA2client',
       expiresAt: 1900000000,
-      extra: { sub: 'U2abc', email: 'bernard.pierrejean@gmail.com' },
+      extra: { sub: 'U2abc', email: 'allowed@example.com' },
     });
   });
 
   it('matches the allowlist case-insensitively (both sides)', async () => {
-    process.env.LBV_ALLOWED_EMAIL = 'Bernard.PierreJean@Gmail.com';
-    grantSession({ email: 'BERNARD.PIERREJEAN@GMAIL.COM' });
+    process.env.LBV_ALLOWED_EMAIL = 'Allowed@Example.com';
+    grantSession({ email: 'ALLOWED@EXAMPLE.COM' });
     expect(await verifyToken(req, 'descope-jwt')).toBeDefined();
   });
 
   it('synthesizes scopes regardless of the token scope claim', async () => {
-    grantSession({ email: 'bernard.pierrejean@gmail.com', scope: 'openid profile admin' });
+    grantSession({ email: 'allowed@example.com', scope: 'openid profile admin' });
     const auth = await verifyToken(req, 'descope-jwt');
     expect(auth?.scopes).toEqual(['groceries']);
   });
@@ -120,7 +120,7 @@ describe('verifyToken — Descope path', () => {
 
   it('fails closed when neither LBV_ALLOWED_EMAIL nor LBV_ALLOWED_SUBJECT is set — no network call', async () => {
     delete process.env.LBV_ALLOWED_EMAIL;
-    grantSession({ email: 'bernard.pierrejean@gmail.com' });
+    grantSession({ email: 'allowed@example.com' });
     expect(await verifyToken(req, 'descope-jwt')).toBeUndefined();
     expect(validateSession).not.toHaveBeenCalled();
   });
@@ -147,13 +147,13 @@ describe('verifyToken — Descope path', () => {
 
   it('still accepts by email when the sub does not match the configured subject', async () => {
     process.env.LBV_ALLOWED_SUBJECT = 'U2allowedUser';
-    grantSession({ sub: 'U2rotatedId', email: 'bernard.pierrejean@gmail.com' });
+    grantSession({ sub: 'U2rotatedId', email: 'allowed@example.com' });
     expect(await verifyToken(req, 'descope-jwt')).toBeDefined();
   });
 
   it('skips the Descope path entirely when DESCOPE_PROJECT_ID is unset', async () => {
     delete process.env.DESCOPE_PROJECT_ID;
-    grantSession({ email: 'bernard.pierrejean@gmail.com' });
+    grantSession({ email: 'allowed@example.com' });
     expect(await verifyToken(req, 'descope-jwt')).toBeUndefined();
     expect(validateSession).not.toHaveBeenCalled();
     expect(descopeFactory).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe('verifyToken — Descope path', () => {
   });
 
   it('reuses one client across calls and rebuilds it when the project changes', async () => {
-    grantSession({ email: 'bernard.pierrejean@gmail.com' });
+    grantSession({ email: 'allowed@example.com' });
     await verifyToken(req, 'descope-jwt');
     await verifyToken(req, 'descope-jwt');
     expect(descopeFactory).toHaveBeenCalledTimes(1);

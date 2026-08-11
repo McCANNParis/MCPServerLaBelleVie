@@ -3,7 +3,9 @@
 An [MCP](https://modelcontextprotocol.io) server (plus an optional thin `lbv` CLI) that lets an AI
 agent do the groceries on [labellevie.com](https://www.labellevie.com) — search the catalog, fill the
 basket, reorder past shops, check delivery coverage and slots, and assemble a **ready-to-pay
-summary**. It is built on the private JSON API the website itself uses (backend: Deleev).
+summary**. It is built on the private JSON API the website itself uses (backend: Deleev). This repo
+is a **blueprint for a remote MCP server** for La Belle Vie: deploy it as-is on Vercel, or swap the
+`src/lbv/*` client layer to bring another service to your agent.
 
 > **Payment is never automated.** Every flow stops at a ready-to-pay basket and hands you a summary
 > plus the `labellevie.com/panier` link. There is deliberately **no tool that places or pays for an
@@ -251,3 +253,7 @@ workflow.
   personal use and gently rate-limited. Undocumented endpoints can change without notice; `/api/health`
   helps flag breakage early.
 - Payment is out of scope by design — the tool stops at a ready basket and you complete payment.
+
+## License
+
+[MIT](LICENSE)
