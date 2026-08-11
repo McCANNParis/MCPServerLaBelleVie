@@ -9,10 +9,11 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
  *    comparison, no network call.
  * 2. Descope OAuth access token — used by Claude Desktop / claude.ai custom
  *    connectors. The real security boundary is the server-side, fail-closed
- *    email allowlist (`LBV_ALLOWED_EMAIL`): whatever Descope's flows allow,
- *    only a token whose `email` claim matches the allow-listed address is
- *    accepted. Scopes are synthesized post-allowlist, never read from the
- *    token, so `requiredScopes: ['groceries']` keeps working for both paths.
+ *    single-user allowlist: whatever Descope's flows allow, only a token
+ *    identifying the allow-listed user — by `email` claim (`LBV_ALLOWED_EMAIL`)
+ *    or by `sub` user id (`LBV_ALLOWED_SUBJECT`) — is accepted. Scopes are
+ *    synthesized post-allowlist, never read from the token, so
+ *    `requiredScopes: ['groceries']` keeps working for both paths.
  */
 
 const GROCERIES_SCOPE = 'groceries';
@@ -25,9 +26,12 @@ export function descopeIssuerUrl(): string | undefined {
   return projectId ? `${base}/v1/apps/${projectId}` : undefined;
 }
 
-/** True when the OAuth path is fully configured (project + allowlist). */
+/** True when the OAuth path is fully configured (project + at least one allowlist key). */
 export function hasOAuthConfig(): boolean {
-  return Boolean(process.env.DESCOPE_PROJECT_ID && process.env.LBV_ALLOWED_EMAIL);
+  return Boolean(
+    process.env.DESCOPE_PROJECT_ID &&
+      (process.env.LBV_ALLOWED_EMAIL || process.env.LBV_ALLOWED_SUBJECT),
+  );
 }
 
 /** Constant-time bearer-token comparison. */
@@ -83,12 +87,19 @@ function extractEmail(token: Record<string, unknown>): string | undefined {
 async function verifyDescopeToken(bearerToken: string): Promise<AuthInfo | undefined> {
   const client = getDescopeClient();
   const allowedEmail = process.env.LBV_ALLOWED_EMAIL?.toLowerCase();
-  if (!client || !allowedEmail) return undefined; // unconfigured ⇒ fail closed
+  const allowedSubject = process.env.LBV_ALLOWED_SUBJECT;
+  if (!client || (!allowedEmail && !allowedSubject)) return undefined; // unconfigured ⇒ fail closed
   try {
     const authInfo = await client.validateSession(bearerToken); // throws on invalid/expired
     const token = authInfo.token as Record<string, unknown>;
     const email = extractEmail(token);
-    if (!email || email !== allowedEmail) return undefined; // absent claim or wrong user ⇒ reject
+    // Either key independently identifies the single allowed user: the email
+    // claim (when the attribute scope delivered it) or the immutable Descope
+    // user id in `sub` (present on every token, so DCR clients whose grants
+    // omit the email claim still pass).
+    const emailAllowed = Boolean(allowedEmail && email === allowedEmail);
+    const subjectAllowed = Boolean(allowedSubject && token.sub === allowedSubject);
+    if (!emailAllowed && !subjectAllowed) return undefined; // wrong or unidentifiable user ⇒ reject
     return {
       token: bearerToken,
       scopes: [GROCERIES_SCOPE], // synthesized post-allowlist, NOT read from the token
