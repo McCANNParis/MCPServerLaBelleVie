@@ -147,6 +147,7 @@ tests — `.env.local` is gitignored):
 | `LBV_API_TOKEN` | Bearer token checked by the server; also given to the agent / CLI |
 | `DESCOPE_PROJECT_ID` | Descope project id — enables the OAuth path (not a secret) |
 | `LBV_ALLOWED_EMAIL` | **The OAuth security boundary**: only a token with this email claim is accepted (fail-closed) |
+| `LBV_ALLOWED_SUBJECT` | Same boundary keyed on the Descope user id (`U…`) in `sub` — covers tokens without an email claim; either match suffices |
 | `DESCOPE_BASE_URL` | Optional Descope regional base URL (default `https://api.descope.com`) |
 | `DESCOPE_MANAGEMENT_KEY` | Local `descope` CLI only — **never** on Vercel, never committed |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV (session cookie cache). Falls back to in-memory if unset. |
