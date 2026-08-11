@@ -3,6 +3,9 @@
   "functions": {
     "app/[transport]/route.ts": {
       "maxDuration": 60
+    },
+    "app/connect/[code]/route.ts": {
+      "maxDuration": 30
     }
   }
 }

@@ -17,16 +17,19 @@ Claude connector ──MCP (OAuth via Descope, email OTP)──┐
 lbv CLI / agent ──MCP (static bearer LBV_API_TOKEN)─────┘        mcp-handler + withMcpAuth
                                                                  tool handlers ─▶ src/lbv/* core
                                                                           │
-                                                         credentials in Vercel env,
-                                                         cookie-jar session in Vercel KV
+                                                    per-caller connection in Vercel KV:
+                                                    AES-encrypted LBV login + cookie jar
+                                                    (connected once via /connect/<code>)
                                                                           ▼
                                                     labellevie.com  +  search.deleev.com
 ```
 
-Both the agent and the CLI speak MCP to the **same** deployed server. Your La Belle Vie login lives
-only in the server's environment (Vercel env vars); the session cookie jar is cached in Vercel KV and
-auto-refreshed. The client-facing La Belle Vie logic is written once in `src/lbv/*` and both surfaces
-are thin.
+Both the agent and the CLI speak MCP to the **same** deployed server. Your La Belle Vie login is
+**not** a server env var: each caller connects their own account once through a one-time browser
+link (`connect_account`). The server verifies the login against labellevie.com, then stores the
+session cookie jar plus the credentials encrypted with AES-256-GCM (`LBV_CRED_KEY`) in Vercel KV so
+it can transparently re-login when the cookie expires. The client-facing La Belle Vie logic is
+written once in `src/lbv/*` and both surfaces are thin.
 
 ## Tools
 
@@ -40,11 +43,16 @@ are thin.
 | `empty_cart()` | — | Empty the basket |
 | `check_postal_coverage(postalCode)` | — | Is a postcode served + fees |
 | `get_delivery_slots(postalCode)` | — | Available delivery windows + fees |
-| `verify_promo(code)` | login | Validate a promo code |
-| `list_recent_orders()` | login | Recent orders (reorder sources) |
-| `list_usual_products()` | login | Most-ordered products |
-| `reorder(orderId)` | login | Add every product from a past order into the basket |
+| `verify_promo(code)` | connect | Validate a promo code |
+| `list_recent_orders()` | connect | Recent orders (reorder sources) |
+| `list_usual_products()` | connect | Most-ordered products |
+| `reorder(orderId)` | connect | Add every product from a past order into the basket |
 | `prepare_checkout(postalCode, slotKey?)` | — | Ready-to-pay summary (totals, coverage, recommended slot, stock check, basket URL). **Does NOT pay.** |
+| `connect_account()` | — | One-time secure browser link to connect **your** LBV account — the password never passes through the chat |
+| `connection_status()` | — | Show whether (and which) LBV account is connected |
+| `disconnect_account()` | — | Disconnect and delete the stored encrypted credentials + session |
+
+`connect` = needs a connected account (see [Connect your account](#connect-your-account)).
 
 ### How the agent should shop
 
@@ -56,6 +64,25 @@ category id as `categoryId` to `search_products` to keep only products in that c
 its subcategories). The search gateway paginates **before** this filter, so a filtered page reports
 `filteredCount`/`scannedCount` and can legitimately come back empty — try the next page or a
 broader category.
+
+## Connect your account
+
+Tools marked `connect` act on **your** La Belle Vie account. Instead of a shared login in server
+env vars, each caller connects their own account once:
+
+1. Ask the agent to run `connect_account` (CLI: `lbv connect`). It returns a link like
+   `https://<server>/connect/<code>` — valid 10 minutes, single use, bound to your verified (OAuth
+   or static-token) identity.
+2. Open the link and enter your labellevie.com email + password on that page. The credentials go
+   from your browser to this server to labellevie.com — **never through the chat or the model**.
+3. On success the server keeps the authenticated cookie jar plus your credentials encrypted with
+   AES-256-GCM (`LBV_CRED_KEY`) in KV, so it can silently re-login when the session cookie expires.
+   The connection lives 90 days past its last use (rolling), i.e. effectively until you disconnect.
+
+`connection_status` shows what is connected; `disconnect_account` deletes the stored credentials
+and session. A wrong password can be retried up to 5 times per link; an expired or used link shows
+a clear page telling you to ask the agent for a fresh one. Static-bearer (CLI) callers share one
+connection; each OAuth user gets their own isolated connection.
 
 ## Use it from an agent
 
@@ -114,8 +141,11 @@ lbv search banane --category 74    # keyword search filtered to a category
 lbv add 49135 2
 lbv cart
 lbv slots 75011
+lbv connect                   # one-time browser link to connect your LBV account
+lbv status                    # which account is connected
 lbv reorder 123456
 lbv checkout 75011            # ready-to-pay summary; never pays
+lbv disconnect                # delete the stored credentials + session
 lbv <command> --json         # print the structured JSON result instead of text
 lbv --help
 ```
@@ -133,24 +163,26 @@ npx @modelcontextprotocol/inspector      # point it at http://localhost:3000/mcp
 LBV_MCP_URL=http://localhost:3000/mcp LBV_API_TOKEN=dev-token lbv search "lait"
 ```
 
-Health check (no auth): `GET /api/health` reports liveness and whether credentials / OAuth / KV are
-configured (it never returns secrets).
+Health check (no auth): `GET /api/health` reports liveness and whether the bearer token / OAuth /
+KV / `LBV_CRED_KEY` are configured, plus `connectReady` (KV **and** key present — the
+account-connect flow will work). It never returns secrets.
 
 ## Environment variables
 
-Set these in the **Vercel project** (and locally in `.env.local` for `verify-auth` / integration
-tests — `.env.local` is gitignored):
+Server variables go in the **Vercel project**; `LBV_EMAIL`/`LBV_PASSWORD` live only in your local
+`.env.local` (gitignored) for `verify-auth` / integration tests:
 
 | Variable | Purpose |
 |---|---|
-| `LBV_EMAIL`, `LBV_PASSWORD` | Your La Belle Vie login (server-side only) |
+| `LBV_EMAIL`, `LBV_PASSWORD` | **Local only** (verify-auth + integration tests). The server never reads them — never set on Vercel. |
+| `LBV_CRED_KEY` | AES-256-GCM key encrypting connected users' credentials at rest (`openssl rand -hex 32`). Rotating it forces everyone to reconnect. |
 | `LBV_API_TOKEN` | Bearer token checked by the server; also given to the agent / CLI |
 | `DESCOPE_PROJECT_ID` | Descope project id — enables the OAuth path (not a secret) |
 | `LBV_ALLOWED_EMAIL` | **The OAuth security boundary**: only a token with this email claim is accepted (fail-closed) |
 | `LBV_ALLOWED_SUBJECT` | Same boundary keyed on the Descope user id (`U…`) in `sub` — covers tokens without an email claim; either match suffices |
 | `DESCOPE_BASE_URL` | Optional Descope regional base URL (default `https://api.descope.com`) |
 | `DESCOPE_MANAGEMENT_KEY` | Local `descope` CLI only — **never** on Vercel, never committed |
-| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV (session cookie cache). Falls back to in-memory if unset. |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV — account connections, one-time connect links, cookie jars. **Required in production**; the in-memory fallback is local-dev only. |
 | `REDIS_URL` | Optional — backs `mcp-handler` SSE resumability |
 | `LBV_MCP_URL` | CLI only — the server URL (default `http://localhost:3000/mcp`) |
 
@@ -158,7 +190,8 @@ See [`.env.example`](./.env.example).
 
 ### Verify auth
 
-Before deploying, confirm the login handshake works with your credentials:
+To confirm the login handshake works with your credentials (the same handshake the `/connect` page
+uses), locally:
 
 ```bash
 # put LBV_EMAIL / LBV_PASSWORD in .env.local first
@@ -201,11 +234,13 @@ npm run test:integration     # opt-in live tests — needs LBV_LIVE=1 + LBV_EMAI
 Deployment uses Vercel's native Git integration (one-time setup):
 
 1. Import this repo into a Vercel project.
-2. Set the environment variables above (`LBV_EMAIL`, `LBV_PASSWORD`, `LBV_API_TOKEN`,
-   `DESCOPE_PROJECT_ID`, `LBV_ALLOWED_EMAIL`, KV). Env changes only apply to **new** deployments —
-   redeploy after adding them.
-3. Add a Vercel KV (Upstash Redis) store to the project.
+2. Set the environment variables above (`LBV_API_TOKEN`, `LBV_CRED_KEY`, `DESCOPE_PROJECT_ID`,
+   `LBV_ALLOWED_EMAIL`, KV). Do **not** set `LBV_EMAIL`/`LBV_PASSWORD` — if migrating from an older
+   deploy, delete them. Env changes only apply to **new** deployments — redeploy after changing
+   them.
+3. Add a Vercel KV (Upstash Redis) store to the project (required for the connect flow).
 4. Push `dev` → **Preview** deploy; PR `dev` → `main` → **Production** deploy.
+5. From each MCP client, run `connect_account` once and complete the browser login.
 
 Add the same `LBV_EMAIL` / `LBV_PASSWORD` as **GitHub Actions secrets** to enable the integration
 workflow.
