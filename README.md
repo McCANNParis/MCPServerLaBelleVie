@@ -185,7 +185,6 @@ Server variables go in the **Vercel project**; `LBV_EMAIL`/`LBV_PASSWORD` live o
 | `DESCOPE_BASE_URL` | Optional Descope regional base URL (default `https://api.descope.com`) |
 | `DESCOPE_MANAGEMENT_KEY` | Local `descope` CLI only — **never** on Vercel, never committed |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV — account connections, one-time connect links, cookie jars. **Required in production**; the in-memory fallback is local-dev only. |
-| `REDIS_URL` | Optional — backs `mcp-handler` SSE resumability |
 | `LBV_MCP_URL` | CLI only — the server URL (default `http://localhost:3000/mcp`) |
 
 See [`.env.example`](./.env.example).

@@ -25,14 +25,15 @@
   },
   "dependencies": {
     "@descope/node-sdk": "^2.14.0",
-    "@modelcontextprotocol/sdk": "1.26.0",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "@upstash/redis": "^1.38.0",
-    "mcp-handler": "^1.1.0",
-    "next": "^15.5.0",
+    "mcp-handler": "^2.1.0",
+    "next": "^16.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tough-cookie": "^5.1.2",
-    "zod": "^3.25.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
@@ -43,6 +44,6 @@
     "tsx": "^4.19.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.66.0",
-    "vitest": "^2.1.9"
+    "vitest": "^3.2.7"
   }
 }

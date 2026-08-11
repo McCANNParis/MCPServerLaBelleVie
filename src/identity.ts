@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { AuthInfo } from '@modelcontextprotocol/server';
 
 /**
  * A stable per-caller identity string, used to key La Belle Vie connections

@@ -1,5 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult, IsomorphicHeaders } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, McpServer, ServerContext } from '@modelcontextprotocol/server';
 import { getPublicOrigin } from 'mcp-handler';
 import { z } from 'zod';
 import { deleteConnection, getConnection, hasConnection } from './connections';
@@ -49,19 +48,20 @@ function euro(v: number | null): string {
   return v === null ? '—' : `€${v.toFixed(2)}`;
 }
 
+/** Caller identity for this tool call; falls back to the static-token identity. */
+function identityOf(ctx: ServerContext): string {
+  return identityFor(ctx.http?.authInfo);
+}
+
 /**
- * Rebuild the public origin of the server from the headers the MCP transport
- * captured for this tool call, so connect links point at the host the client
- * actually reached (localhost in dev, the deployment URL behind Vercel).
+ * Public origin of the server as the client actually reached it (localhost in
+ * dev, the deployment URL behind Vercel's proxy), so connect links point back
+ * at this server. `ctx.http.req` is absent on non-HTTP transports (the
+ * in-process tests), where local dev is the only sensible guess.
  */
-function originFromHeaders(headers: IsomorphicHeaders | undefined): string {
-  const h = new Headers();
-  for (const [name, value] of Object.entries(headers ?? {})) {
-    if (Array.isArray(value)) for (const v of value) h.append(name, v);
-    else if (typeof value === 'string') h.set(name, value);
-  }
-  const host = h.get('host') ?? 'localhost:3000';
-  return getPublicOrigin(new Request(`http://${host}/mcp`, { headers: h }));
+function originOf(ctx: ServerContext): string {
+  const req = ctx.http?.req;
+  return req ? getPublicOrigin(req) : 'http://localhost:3000';
 }
 
 /**
@@ -75,7 +75,7 @@ export function registerTools(server: McpServer): void {
       title: 'Search products',
       description:
         'Search the La Belle Vie catalog by keyword. Returns matching products with id, name, price, unit, stock, sale info and category names. Use the returned product id with add_to_cart. Keyword search can conflate meanings (e.g. "banane" returns fresh bananas AND banana-flavored candy) — pass a categoryId from browse_categories to keep only products in that category (and its subcategories).',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().min(1).describe('Search keywords, e.g. "banane bio"'),
         page: z.number().int().min(1).optional().describe('1-based page number'),
         perPage: z.number().int().min(1).max(100).optional().describe('Results per page (default 25)'),
@@ -84,10 +84,10 @@ export function registerTools(server: McpServer): void {
           .int()
           .optional()
           .describe('Category id from browse_categories; keeps only products in it or its subcategories'),
-      },
+      }),
     },
-    async ({ query, page, perPage, categoryId }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ query, page, perPage, categoryId }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const result = await withClient(identity, (c) => c.searchProducts(query, { page, perPage, categoryId }));
         const lines = result.products
@@ -119,13 +119,13 @@ export function registerTools(server: McpServer): void {
       title: 'Browse categories',
       description:
         "Explore the store's category taxonomy. No arguments → the top-level aisles (Primeur, Fromagerie, Épicerie…); parentId → that category's subcategories; query → find categories by name (accent-insensitive) with breadcrumb paths. Use a returned id as categoryId in search_products to filter results.",
-      inputSchema: {
+      inputSchema: z.object({
         parentId: z.number().int().optional().describe('Category id whose subcategories to list'),
         query: z.string().min(1).optional().describe('Find categories by name, e.g. "fromage"'),
-      },
+      }),
     },
-    async ({ parentId, query }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ parentId, query }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const result = await withClient(identity, (c) => c.browseCategories({ parentId, query }));
         const title =
@@ -158,10 +158,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'View cart',
       description: 'Show the current basket: line items, quantities and totals.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async (_args, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const cart = await withClient(identity, (c) => c.getCart());
         const lines = cart.lines.map((l) => `• ${l.quantity}× [${l.productId}] ${l.name} — ${euro(l.linePrice)}`).join('\n');
@@ -178,13 +178,13 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Add to cart',
       description: 'Add a product to the basket by product id. Quantity defaults to 1.',
-      inputSchema: {
+      inputSchema: z.object({
         productId: z.string().describe('Product id from search_products'),
         quantity: z.number().int().min(1).optional().describe('Quantity to add (default 1)'),
-      },
+      }),
     },
-    async ({ productId, quantity }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ productId, quantity }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const cart = await withClient(identity, (c) => c.addToCart(productId, quantity ?? 1));
         return ok(`Added ${quantity ?? 1}× [${productId}]. Cart now has ${cart.itemCount} item(s), subtotal ${euro(cart.subtotal)}.`, {
@@ -199,13 +199,13 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Remove from cart',
       description: 'Remove a product (or reduce its quantity) from the basket by product id.',
-      inputSchema: {
+      inputSchema: z.object({
         productId: z.string().describe('Product id to remove'),
         quantity: z.number().int().min(1).optional().describe('Quantity to remove (default 1)'),
-      },
+      }),
     },
-    async ({ productId, quantity }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ productId, quantity }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const cart = await withClient(identity, (c) => c.removeFromCart(productId, quantity ?? 1));
         return ok(`Removed ${quantity ?? 1}× [${productId}]. Cart now has ${cart.itemCount} item(s).`, { ...cart });
@@ -218,10 +218,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Empty cart',
       description: 'Remove all items from the basket.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async (_args, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const cart = await withClient(identity, (c) => c.emptyCart());
         return ok(`Cart emptied. ${cart.itemCount} item(s) remain.`, { ...cart });
@@ -234,10 +234,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Check delivery coverage',
       description: 'Check whether a French postal code is served, with base shipping fee and free-shipping threshold.',
-      inputSchema: { postalCode: z.string().describe('French postal code, e.g. "75011"') },
+      inputSchema: z.object({ postalCode: z.string().describe('French postal code, e.g. "75011"') }),
     },
-    async ({ postalCode }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ postalCode }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const coverage = await withClient(identity, (c) => c.getPostalCoverage(postalCode));
         const text = coverage.covered
@@ -253,12 +253,12 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Get delivery slots',
       description: 'List available delivery windows for a postal code, with times and fees.',
-      inputSchema: {
+      inputSchema: z.object({
         postalCode: z.string().describe('French postal code, e.g. "75011"'),
-      },
+      }),
     },
-    async ({ postalCode }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ postalCode }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const { slots, deliveryWarning } = await withClient(identity, (c) => c.getSlots(postalCode));
         const lines = slots
@@ -277,10 +277,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Verify promo code',
       description: 'Check whether a promo code is valid for the account (requires a connected account).',
-      inputSchema: { code: z.string().min(1).describe('Promo code to verify') },
+      inputSchema: z.object({ code: z.string().min(1).describe('Promo code to verify') }),
     },
-    async ({ code }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ code }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(true, identity, async () => {
         const result = await withClient(identity, (c) => c.verifyPromo(code));
         const text = result.valid
@@ -296,10 +296,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'List recent orders',
       description: 'List the account\'s recent orders (ids + dates + totals) to use as reorder sources (requires a connected account).',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async (_args, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(true, identity, async () => {
         const orders = await withClient(identity, (c) => c.listRecentOrders());
         const lines = orders.map((o) => `• [${o.id}] ${o.date ?? '?'} — ${euro(o.total)}`).join('\n');
@@ -313,10 +313,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'List usual products',
       description: 'List the account\'s most frequently ordered products (requires a connected account).',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async (_args, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(true, identity, async () => {
         const products = await withClient(identity, (c) => c.listUsualProducts());
         const lines = products.map((p) => `• [${p.productId}] ${p.name ?? ''} (usual qty ${p.quantity})`).join('\n');
@@ -331,10 +331,10 @@ export function registerTools(server: McpServer): void {
       title: 'Reorder a past order',
       description:
         'Add every product from a past order into the current basket (requires a connected account). Use list_recent_orders to find an order id. Does not place or pay for the order.',
-      inputSchema: { orderId: z.string().describe('Order id from list_recent_orders') },
+      inputSchema: z.object({ orderId: z.string().describe('Order id from list_recent_orders') }),
     },
-    async ({ orderId }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ orderId }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(true, identity, async () => {
         const result = await withClient(identity, (c) => c.reorder(orderId));
         const text =
@@ -352,13 +352,13 @@ export function registerTools(server: McpServer): void {
       title: 'Prepare checkout (ready-to-pay summary)',
       description:
         'Assemble a ready-to-pay summary for the current basket: totals, delivery coverage, a recommended delivery slot and a stock check, plus the basket URL. IMPORTANT: this does NOT place or pay for the order — the user completes payment themselves on labellevie.com.',
-      inputSchema: {
+      inputSchema: z.object({
         postalCode: z.string().describe('Delivery postal code, e.g. "75011"'),
         slotKey: z.string().optional().describe('Preferred delivery slot key from get_delivery_slots'),
-      },
+      }),
     },
-    async ({ postalCode, slotKey }, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async ({ postalCode, slotKey }, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const s = await withClient(identity, (c) => c.prepareCheckout(postalCode, slotKey));
         const slot = s.recommendedSlot
@@ -383,10 +383,10 @@ export function registerTools(server: McpServer): void {
       title: 'Connect your La Belle Vie account',
       description:
         'Get a one-time secure link to a login page where you enter your La Belle Vie email and password yourself — credentials never pass through this chat. The link is short-lived and single-use. Completing it replaces any previously connected account.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async (_args, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         if (!hasCredKey()) {
           return fail(
@@ -395,7 +395,7 @@ export function registerTools(server: McpServer): void {
         }
         const existing = await getConnection(identity);
         const { code, expiresAt } = await createLinkCode(identity);
-        const url = `${originFromHeaders(extra.requestInfo?.headers)}/connect/${code}`;
+        const url = `${originOf(ctx)}/connect/${code}`;
         const lines = [
           'Open this link to connect your La Belle Vie account:',
           '',
@@ -416,10 +416,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Connection status',
       description: 'Show whether a La Belle Vie account is connected for this caller, and which one.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async (_args, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const connection = await getConnection(identity);
         if (!connection) {
@@ -445,10 +445,10 @@ export function registerTools(server: McpServer): void {
       title: 'Disconnect account',
       description:
         'Disconnect the La Belle Vie account for this caller and delete its stored (encrypted) credentials and session.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) => {
-      const identity = identityFor(extra.authInfo);
+    async (_args, ctx) => {
+      const identity = identityOf(ctx);
       return runTool(false, identity, async () => {
         const existed = await deleteConnection(identity);
         await getSessionStore().clear(sessionKeyFor(identity));

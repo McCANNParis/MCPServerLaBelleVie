@@ -7,9 +7,8 @@
  *
  * Config: LBV_MCP_URL (default http://localhost:3000/mcp), LBV_API_TOKEN.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import type { CallToolResult } from '@modelcontextprotocol/client';
 
 const DEFAULT_URL = 'http://localhost:3000/mcp';
 const BOOLEAN_FLAGS = new Set(['json', 'pretty', 'help']);
