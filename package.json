@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "MCP server (+ optional thin CLI) that lets an AI agent do the groceries on labellevie.com — up to a ready-to-pay cart. Payment is never automated.",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=20"
