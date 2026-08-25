@@ -1,0 +1,117 @@
+{
+  "name": "Mes favoris",
+  "type": "first",
+  "order": 0,
+  "created_at": "2025-01-10T10:00:00.000Z",
+  "id": 501,
+  "products": [
+    {
+      "list_id": 501,
+      "product_id": 19967,
+      "quantity": 1,
+      "order": 0,
+      "product": {
+        "id": 19967,
+        "selling_name": "Comté râpé AOP au lait cru BIO, 34 % MG, Lait Plaisirs (140 g)",
+        "name": "Comté râpé AOP au lait cru BIO, 34 % MG, Lait Plaisirs (140 g)",
+        "brand": "Lait Plaisirs",
+        "price": 4.85,
+        "price_ht": 4.6,
+        "stock_quantity": 12,
+        "unlimited_stocks": false,
+        "disponibility": "order",
+        "max_quantity_by_order": 0,
+        "label_unit_notation_listing": {
+          "formatted_selling_unit": "",
+          "formatted_weight_price": ""
+        },
+        "bio": true,
+        "pack": 1,
+        "is_frozen": false,
+        "selling_method": "unit",
+        "picture_thumbnail_url": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/13180/0ba7fcbcc8fb6652b3379dd8db3018fd.jpg"
+      }
+    },
+    {
+      "list_id": 501,
+      "product_id": 81991,
+      "quantity": 1,
+      "order": 0,
+      "product": {
+        "id": 81991,
+        "selling_name": "Burrata in foglia AOP, Frichti (250 g)",
+        "name": "Burrata in foglia AOP, Frichti (250 g)",
+        "brand": "Frichti",
+        "price": 4.99,
+        "price_ht": 4.73,
+        "stock_quantity": 664,
+        "unlimited_stocks": false,
+        "disponibility": "order",
+        "max_quantity_by_order": 0,
+        "label_unit_notation_listing": {
+          "formatted_selling_unit": "",
+          "formatted_weight_price": ""
+        },
+        "bio": false,
+        "pack": 1,
+        "is_frozen": false,
+        "selling_method": "unit",
+        "picture_thumbnail_url": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/copie-de-burratina-di-buffala-frichti-100-g/4465ccb3feaf9f16e46a3d9032508d53.jpg"
+      }
+    },
+    {
+      "list_id": 501,
+      "product_id": 97457,
+      "quantity": 1,
+      "order": 0,
+      "product": {
+        "id": 97457,
+        "selling_name": "Halloumi AOP de Chypre, Frichti (180 g)",
+        "name": "Halloumi AOP de Chypre, Frichti (180 g)",
+        "brand": "",
+        "price": 3.95,
+        "price_ht": 3.74,
+        "stock_quantity": 3633,
+        "unlimited_stocks": false,
+        "disponibility": "order",
+        "max_quantity_by_order": 0,
+        "label_unit_notation_listing": {
+          "formatted_selling_unit": "",
+          "formatted_weight_price": ""
+        },
+        "bio": false,
+        "pack": 1,
+        "is_frozen": false,
+        "selling_method": "unit",
+        "picture_thumbnail_url": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/halloumi-aop-de-chypre-frichti-180-g_EGOzCRP/a4964a9486993cca6aee57b06b5a8729.jpg"
+      }
+    },
+    {
+      "list_id": 501,
+      "product_id": 39495,
+      "quantity": 1,
+      "order": 0,
+      "product": {
+        "id": 39495,
+        "selling_name": "Raisins secs BIO, Vahiné (200 g)",
+        "name": "Raisins secs BIO, Vahiné (200 g)",
+        "brand": "",
+        "price": 4.28,
+        "price_ht": 4.06,
+        "stock_quantity": 20,
+        "unlimited_stocks": false,
+        "disponibility": "order",
+        "max_quantity_by_order": 0,
+        "label_unit_notation_listing": {
+          "formatted_selling_unit": "",
+          "formatted_weight_price": ""
+        },
+        "bio": true,
+        "pack": 1,
+        "is_frozen": false,
+        "selling_method": "unit",
+        "picture_thumbnail_url": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/3179142056668_PHOTOSITE_20210317_165312_0/51e59c722a36b4c81434462661c376f0.jpg"
+      }
+    }
+  ]
+}

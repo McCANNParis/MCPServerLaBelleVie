@@ -1,0 +1,130 @@
+{
+  "id": 1001,
+  "status": "received",
+  "order_time": "2025-03-03T09:12:41+01:00",
+  "shipping_time": "2025-03-03T18:00:00+01:00",
+  "total": 15.74,
+  "is_paid": true,
+  "products": [
+    {
+      "product_id": 45819,
+      "selling_name": "Salade feuille de chêne BIO, France",
+      "quantity": 1,
+      "quantity_bought": 1,
+      "unit_ttc": 1.99,
+      "unit_ht": 1.8862559241706,
+      "total_ttc": 1.99,
+      "total_ht": 1.8862559241706,
+      "vat_rate": 5.5,
+      "thumb": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/salade-feuille-de-chene-bio_lrqri4w/d394600374ea02f64881973b35bfb7ca.jpg",
+      "promotion": null,
+      "formula": null,
+      "product": {
+        "id": 45819,
+        "selling_name": "Salade feuille de chêne BIO, France",
+        "name": "Salade feuille de chêne BIO, France",
+        "brand": "",
+        "price": 1.99,
+        "price_ht": 1.89,
+        "stock_quantity": 23,
+        "unlimited_stocks": false,
+        "disponibility": "order",
+        "max_quantity_by_order": 0,
+        "label_unit_notation_listing": {
+          "formatted_selling_unit": "La pièce",
+          "formatted_weight_price": ""
+        },
+        "bio": true,
+        "pack": 1,
+        "is_frozen": false,
+        "selling_method": "unit",
+        "picture_thumbnail_url": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/salade-feuille-de-chene-bio_lrqri4w/d394600374ea02f64881973b35bfb7ca.jpg"
+      }
+    },
+    {
+      "product_id": 70408,
+      "selling_name": "Mouchoirs 4 épaisseurs, U Nature (x 15 étuis)",
+      "quantity": 1,
+      "quantity_bought": 1,
+      "unit_ttc": 2.57,
+      "unit_ht": 2.1416666666667,
+      "total_ttc": 2.57,
+      "total_ht": 2.1416666666667,
+      "vat_rate": 20,
+      "thumb": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/mouch-u-nat-etuis-compacts-x15/529f895be0f948a62c184c1b404ee854.jpg",
+      "promotion": null,
+      "formula": null,
+      "product": {
+        "id": 70408,
+        "selling_name": "Mouchoirs 4 épaisseurs, U Nature (x 15 étuis)",
+        "name": "Mouchoirs 4 épaisseurs, U Nature (x 15 étuis)",
+        "brand": "U Nature",
+        "price": 2.57,
+        "price_ht": 2.14,
+        "stock_quantity": 54,
+        "unlimited_stocks": false,
+        "disponibility": "order",
+        "max_quantity_by_order": 0,
+        "label_unit_notation_listing": {
+          "formatted_selling_unit": "",
+          "formatted_weight_price": ""
+        },
+        "bio": false,
+        "pack": 1,
+        "is_frozen": false,
+        "selling_method": "unit",
+        "picture_thumbnail_url": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/mouch-u-nat-etuis-compacts-x15/529f895be0f948a62c184c1b404ee854.jpg"
+      }
+    },
+    {
+      "product_id": 34117,
+      "selling_name": "Galettes de blé noir BIO, Galettes de Saint Malo (x 4, 280 g)",
+      "quantity": 1,
+      "quantity_bought": 1,
+      "unit_ttc": 4.18,
+      "unit_ht": 3.9620853080569,
+      "total_ttc": 4.18,
+      "total_ht": 3.9620853080569,
+      "vat_rate": 5.5,
+      "thumb": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/galettes-de-ble-noir-bio-galettes-de-saint-malo-x-4-280-g/9ba3b25324fb8b8618d7f73c806285e6.JPG",
+      "promotion": null,
+      "formula": null,
+      "product": {
+        "id": 34117,
+        "selling_name": "Galettes de blé noir BIO, Galettes de Saint Malo (x 4, 280 g)",
+        "name": "Galettes de blé noir BIO, Galettes de Saint Malo (x 4, 280 g)",
+        "brand": "",
+        "price": 4.18,
+        "price_ht": 3.96,
+        "stock_quantity": 0,
+        "unlimited_stocks": false,
+        "disponibility": "order",
+        "max_quantity_by_order": 0,
+        "label_unit_notation_listing": {
+          "formatted_selling_unit": "",
+          "formatted_weight_price": ""
+        },
+        "bio": true,
+        "pack": 1,
+        "is_frozen": false,
+        "selling_method": "unit",
+        "picture_thumbnail_url": "https://fridg-front.s3.amazonaws.com/media/CACHE/images/products/galettes-de-ble-noir-bio-galettes-de-saint-malo-x-4-280-g/9ba3b25324fb8b8618d7f73c806285e6.JPG"
+      }
+    },
+    {
+      "product_id": 424242,
+      "selling_name": "Produit retiré du catalogue",
+      "quantity": 2,
+      "quantity_bought": 0,
+      "unit_ttc": 3.5,
+      "unit_ht": 3.32,
+      "total_ttc": 7.0,
+      "total_ht": 6.64,
+      "vat_rate": 5.5,
+      "thumb": null,
+      "promotion": null,
+      "formula": null,
+      "product": null
+    }
+  ]
+}

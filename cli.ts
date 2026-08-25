@@ -93,6 +93,25 @@ function resolveCommand(cmd: string, rest: string[], flags: Parsed['flags']): To
       return { name: 'list_usual_products', arguments: {} };
     case 'reorder':
       return { name: 'reorder', arguments: { orderId: rest[0] } };
+    case 'order':
+      return { name: 'get_order_products', arguments: { orderId: rest[0] } };
+    case 'favorites':
+      return { name: 'list_favorites', arguments: { listId: rest[0] } };
+    case 'favorite': {
+      // --list takes either a numeric list id or a list name (created when missing).
+      const list = typeof flags.list === 'string' ? flags.list : undefined;
+      const byId = list !== undefined && /^\d+$/.test(list);
+      return {
+        name: 'add_to_favorites',
+        arguments: {
+          productId: rest[0],
+          listId: byId ? list : undefined,
+          listName: byId ? undefined : list,
+        },
+      };
+    }
+    case 'unfavorite':
+      return { name: 'remove_from_favorites', arguments: { productId: rest[0], listId: rest[1] } };
     case 'checkout':
       return { name: 'prepare_checkout', arguments: { postalCode: rest[0], slotKey: rest[1] } };
     case 'connect':
@@ -123,8 +142,12 @@ Commands:
   slots <postalCode>                       List delivery slots
   promo <code>                             Verify a promo code (needs connected account)
   orders                                   List recent orders (needs connected account)
+  order <orderId>                          List the products of a past order (needs connected account)
   usuals                                   List usual products (needs connected account)
   reorder <orderId>                        Add a past order into the basket (needs connected account)
+  favorites [listId]                       List favorites lists + their products (needs connected account)
+  favorite <productId> [--list <id|name>]  Add a product to a favorites list (needs connected account)
+  unfavorite <productId> [listId]          Remove a product from favorites (needs connected account)
   checkout <postalCode> [slotKey]          Ready-to-pay summary (does NOT pay)
   connect                                  Get a one-time link to connect your LBV account
   status                                   Show which LBV account is connected
