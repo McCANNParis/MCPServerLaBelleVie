@@ -46,9 +46,13 @@ written once in `src/lbv/*` and both surfaces are thin.
 | `check_postal_coverage(postalCode)` | — | Is a postcode served + fees |
 | `get_delivery_slots(postalCode)` | — | Available delivery windows + fees |
 | `verify_promo(code)` | connect | Validate a promo code |
-| `list_recent_orders()` | connect | Recent orders (reorder sources) |
-| `list_usual_products()` | connect | Most-ordered products |
+| `list_recent_orders()` | connect | Recent orders: id, date, product count — feed `get_order_products` or `reorder` |
+| `get_order_products(orderId)` | connect | Every product of a past order with quantity, current price, unit and availability |
+| `list_usual_products()` | connect | Most-ordered products with price, unit and aisle |
 | `reorder(orderId)` | connect | Add every product from a past order into the basket |
+| `list_favorites(listId?)` | connect | The account's favorites lists (the site's "listes favoris") with their products |
+| `add_to_favorites(productId, listId?, listName?)` | connect | Add a product to a favorites list; `listName` finds or creates the list, no list at all → "Mes favoris" |
+| `remove_from_favorites(productId, listId?)` | connect | Remove a product from one list, or from every list it is on |
 | `prepare_checkout(postalCode, slotKey?)` | — | Ready-to-pay summary (totals, coverage, recommended slot, stock check, basket URL). **Does NOT pay.** |
 | `connect_account()` | — | One-time secure browser link to connect **your** LBV account — the password never passes through the chat |
 | `connection_status()` | — | Show whether (and which) LBV account is connected |
@@ -66,6 +70,14 @@ category id as `categoryId` to `search_products` to keep only products in that c
 its subcategories). The search gateway paginates **before** this filter, so a filtered page reports
 `filteredCount`/`scannedCount` and can legitimately come back empty — try the next page or a
 broader category.
+
+**Recurring purchases.** Three sources feed a basket of things the user buys regularly:
+`list_usual_products` (the site's most-ordered products), `list_recent_orders` →
+`get_order_products` (what a past order contained, with today's price and availability) and
+`list_favorites` (the user's own lists). Each returns product ids to pass to `add_to_cart`;
+`reorder` takes a whole past order in one call, and `add_to_favorites` / `remove_from_favorites`
+curate the lists for next time. Products flagged `available: false` have been withdrawn or are out
+of stock — skip them or search for a replacement.
 
 ## Connect your account
 
@@ -145,7 +157,13 @@ lbv cart
 lbv slots 75011
 lbv connect                   # one-time browser link to connect your LBV account
 lbv status                    # which account is connected
-lbv reorder 123456
+lbv orders                    # recent orders: id, date, product count
+lbv order 123456              # products of one past order, with availability
+lbv usuals                    # most-ordered products
+lbv reorder 123456            # add a whole past order into the basket
+lbv favorites                 # favorites lists + their products
+lbv favorite 49135 --list "Courses de la semaine"   # add to a list (created if missing)
+lbv unfavorite 49135          # remove from every favorites list
 lbv checkout 75011            # ready-to-pay summary; never pays
 lbv disconnect                # delete the stored credentials + session
 lbv <command> --json         # print the structured JSON result instead of text
@@ -212,6 +230,7 @@ npm run lint                 # ESLint (flat config)
 npm run typecheck            # tsc --noEmit
 npm test                     # unit + contract tests (mocked, no secrets, no network)
 npm run test:integration     # opt-in live tests — needs LBV_LIVE=1 + LBV_EMAIL/LBV_PASSWORD
+npm run capture-fixtures     # re-capture the orders/favorites responses into a temp dir (local creds)
 ```
 
 - **Unit** (`tests/unit`): request builders + response parsers grounded in captured API fixtures,
@@ -220,8 +239,14 @@ npm run test:integration     # opt-in live tests — needs LBV_LIVE=1 + LBV_EMAI
   each tool's input schema, and — as a guardrail regression — that **no payment/order-placing tool is
   exposed**.
 - **Integration** (`tests/integration`): read-only / self-reverting live calls (search, coverage,
-  slots, and an add→view→remove cart round-trip that restores the basket). Never touches payment.
-  Skipped unless `LBV_LIVE=1`.
+  slots, an add→view→remove cart round-trip that restores the basket, the orders pages, and a
+  favorites round-trip on a throwaway `__lbv_mcp_test_*` list that is deleted afterwards). Never
+  touches payment. Skipped unless `LBV_LIVE=1`.
+- **Fixtures** (`tests/fixtures`): `npm run capture-fixtures` logs in with the local
+  `LBV_EMAIL`/`LBV_PASSWORD`, performs read-only requests and writes the raw responses to a temp
+  directory — never into the repo. Before copying a capture in, strip everything personal (name,
+  email, address, phone, user id) and replace real order/list ids with synthetic ones; product data
+  is public catalogue content and stays.
 
 ## CI/CD & branches
 
@@ -258,6 +283,13 @@ workflow.
   personal use and gently rate-limited. Undocumented endpoints can change without notice; `/api/health`
   helps flag breakage early.
 - Payment is out of scope by design — the tool stops at a ready basket and you complete payment.
+- Favorites are the site's own "listes favoris": the tools read and edit the same lists you see on
+  labellevie.com. `add_to_favorites` creates "Mes favoris" when the account has no list yet, and
+  asks for `listId`/`listName` when it has several. Lists themselves are never deleted by a tool.
+- The orders pages (`/commande-rapide/…`) are server-rendered HTML, parsed with a few patterns
+  behind a page-marker check: if La Belle Vie changes that markup, `list_recent_orders` /
+  `list_usual_products` fail with an explicit "site may have changed" error rather than an empty
+  list.
 
 ## License
 

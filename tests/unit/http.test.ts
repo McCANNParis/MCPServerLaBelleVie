@@ -103,6 +103,145 @@ describe('LbvHttp auto re-login', () => {
   });
 });
 
+interface RecordedCall extends Call {
+  headers: Headers;
+}
+
+/**
+ * Fake fetch that records headers too and answers the login handshake itself;
+ * every other request is delegated to `respond(method, path, hit)` where `hit`
+ * counts how many times that method+path has been seen.
+ */
+function makeRecordingFetch(
+  calls: RecordedCall[],
+  respond: (method: string, path: string, hit: number) => Response,
+) {
+  const hits = new Map<string, number>();
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const path = new URL(url).pathname;
+    calls.push({
+      method,
+      url,
+      body: init?.body ? String(init.body) : undefined,
+      headers: new Headers(init?.headers as HeadersInit),
+    });
+    if (method === 'GET' && path === '/') {
+      return new Response(loginHtml(), { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    if (method === 'POST' && path === '/connexion') return new Response('{}', { status: 200 });
+    const hit = (hits.get(`${method} ${path}`) ?? 0) + 1;
+    hits.set(`${method} ${path}`, hit);
+    return respond(method, path, hit);
+  };
+}
+
+const CREDS = { email: 'shopper@example.com', password: 's3cret' };
+const redirectHome = () =>
+  new Response('', { status: 302, headers: { location: 'https://www.labellevie.com/' } });
+
+describe('LbvHttp.sendJson', () => {
+  it('sends a JSON body with the JSON content type and the XHR header', async () => {
+    const calls: RecordedCall[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch(calls, () => new Response('{"ok":true}', { status: 200 })) as typeof fetch,
+    });
+    const result = await http.sendJson('PUT', '/favorites-lists/1/products/2', { id: 1, product_id: 2 });
+    expect(result).toEqual({ ok: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].body).toBe('{"id":1,"product_id":2}');
+    expect(calls[0].headers.get('content-type')).toBe('application/json; charset=UTF-8');
+    expect(calls[0].headers.get('x-requested-with')).toBe('XMLHttpRequest');
+  });
+
+  it('sends no body or content type when none is given', async () => {
+    const calls: RecordedCall[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch(calls, () => new Response('', { status: 200 })) as typeof fetch,
+    });
+    await http.sendJson('DELETE', '/favorites-lists/1/products/2');
+    expect(calls[0].body).toBeUndefined();
+    expect(calls[0].headers.has('content-type')).toBe(false);
+  });
+});
+
+describe('LbvHttp redirects mean "logged out"', () => {
+  it('re-logs-in and retries once when a JSON call answers with a 302', async () => {
+    const calls: RecordedCall[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch(calls, (_m, path, hit) =>
+        path === '/favorites-lists' && hit === 1 ? redirectHome() : new Response('[]', { status: 200 }),
+      ) as typeof fetch,
+      credentials: CREDS,
+    });
+    expect(await http.getJson('/favorites-lists')).toEqual([]);
+    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+      'GET /favorites-lists',
+      'GET /',
+      'POST /connexion',
+      'GET /favorites-lists',
+    ]);
+  });
+
+  it('surfaces LbvNotAuthenticatedError on a 302 when no credentials are set', async () => {
+    const calls: RecordedCall[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch(calls, () => redirectHome()) as typeof fetch,
+    });
+    await expect(http.getJson('/favorites-lists')).rejects.toBeInstanceOf(LbvNotAuthenticatedError);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('surfaces LbvNotAuthenticatedError when the retry still redirects', async () => {
+    const calls: RecordedCall[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch(calls, () => redirectHome()) as typeof fetch,
+      credentials: CREDS,
+    });
+    await expect(http.getText('/commande-rapide/dernieres-commandes')).rejects.toBeInstanceOf(
+      LbvNotAuthenticatedError,
+    );
+    // One handshake, then the retried page request — never a loop.
+    expect(calls).toHaveLength(4);
+  });
+});
+
+describe('LbvHttp.getText', () => {
+  it('returns the page body verbatim with a browser-like Accept and no XHR header', async () => {
+    const calls: RecordedCall[] = [];
+    const page = '<div class="last-orders"></div>';
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch(
+        calls,
+        () => new Response(page, { status: 200, headers: { 'content-type': 'text/html' } }),
+      ) as typeof fetch,
+    });
+    expect(await http.getText('/commande-rapide/dernieres-commandes')).toBe(page);
+    expect(calls[0].headers.has('x-requested-with')).toBe(false);
+    expect(calls[0].headers.get('accept')?.startsWith('text/html')).toBe(true);
+  });
+
+  it('sends the XHR header when asked to', async () => {
+    const calls: RecordedCall[] = [];
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch(calls, () => new Response('<div/>', { status: 200 })) as typeof fetch,
+    });
+    await http.getText('/commande-rapide/dernieres-commandes', { xhr: true });
+    expect(calls[0].headers.get('x-requested-with')).toBe('XMLHttpRequest');
+  });
+
+  it('throws LbvApiError with the body on a non-2xx page', async () => {
+    const http = new LbvHttp({
+      fetchImpl: makeRecordingFetch([], () => new Response('boom', { status: 500 })) as typeof fetch,
+    });
+    await expect(http.getText('/commande-rapide/dernieres-commandes')).rejects.toBeInstanceOf(
+      LbvApiError,
+    );
+  });
+});
+
 describe('ensureLoggedIn', () => {
   it('throws LbvNotAuthenticatedError when no credentials are available', async () => {
     const http = new LbvHttp({ fetchImpl: makeFakeFetch([]) as typeof fetch });

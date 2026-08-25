@@ -48,6 +48,20 @@ function euro(v: number | null): string {
   return v === null ? '—' : `€${v.toFixed(2)}`;
 }
 
+/** One line per order/favorites product: id, name, quantity, price, unit, availability. */
+function productLine(p: {
+  productId: string;
+  name: string | null;
+  quantity: number;
+  price: number | null;
+  unit: string | null;
+  available: boolean | null;
+}): string {
+  const unit = p.unit ? ` / ${p.unit}` : '';
+  const availability = p.available === false ? ' — UNAVAILABLE' : '';
+  return `• [${p.productId}] ${p.name ?? '(unnamed)'} ×${p.quantity} — ${euro(p.price)}${unit}${availability}`;
+}
+
 /** Caller identity for this tool call; falls back to the static-token identity. */
 function identityOf(ctx: ServerContext): string {
   return identityFor(ctx.http?.authInfo);
@@ -295,15 +309,25 @@ export function registerTools(server: McpServer): void {
     'list_recent_orders',
     {
       title: 'List recent orders',
-      description: 'List the account\'s recent orders (ids + dates + totals) to use as reorder sources (requires a connected account).',
+      description:
+        "List the account's recent orders (id, date, number of products) — the starting point for rebuilding a basket from past purchases (requires a connected account). Pass an id to get_order_products to see what it contained, or to reorder to add all of it to the basket.",
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
       const identity = identityOf(ctx);
       return runTool(true, identity, async () => {
         const orders = await withClient(identity, (c) => c.listRecentOrders());
-        const lines = orders.map((o) => `• [${o.id}] ${o.date ?? '?'} — ${euro(o.total)}`).join('\n');
-        return ok(`${orders.length} recent order(s).\n` + (lines || '(none)'), { orders });
+        const lines = orders
+          .map((o) => {
+            const count = o.itemCount === null ? '' : ` — ${o.itemCount} product(s)`;
+            const total = o.total === null ? '' : ` — ${euro(o.total)}`;
+            return `• [${o.id}] ${o.date ?? '?'}${count}${total}`;
+          })
+          .join('\n');
+        const hint = orders.length
+          ? '\nUse get_order_products <id> to list the items, or reorder <id> to add them all to the basket.'
+          : '';
+        return ok(`${orders.length} recent order(s).\n` + (lines || '(none)') + hint, { orders });
       });
     },
   );
@@ -312,14 +336,21 @@ export function registerTools(server: McpServer): void {
     'list_usual_products',
     {
       title: 'List usual products',
-      description: 'List the account\'s most frequently ordered products (requires a connected account).',
+      description:
+        "List the account's most frequently ordered products with id, price, unit and aisle (requires a connected account). Recurring-purchase shortcut: pick ids from here and pass them to add_to_cart or add_to_favorites.",
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
       const identity = identityOf(ctx);
       return runTool(true, identity, async () => {
         const products = await withClient(identity, (c) => c.listUsualProducts());
-        const lines = products.map((p) => `• [${p.productId}] ${p.name ?? ''} (usual qty ${p.quantity})`).join('\n');
+        const lines = products
+          .map((p) => {
+            const unit = p.unit ? ` / ${p.unit}` : '';
+            const category = p.category ? ` (${p.category})` : '';
+            return `• [${p.productId}] ${p.name ?? '(unnamed)'} — ${euro(p.price)}${unit}${category}`;
+          })
+          .join('\n');
         return ok(`${products.length} usual product(s).\n` + (lines || '(none)'), { products });
       });
     },
@@ -330,7 +361,7 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Reorder a past order',
       description:
-        'Add every product from a past order into the current basket (requires a connected account). Use list_recent_orders to find an order id. Does not place or pay for the order.',
+        'Add every product from a past order into the current basket (requires a connected account). Use list_recent_orders to find an order id, and get_order_products to preview its items first. Does not place or pay for the order.',
       inputSchema: z.object({ orderId: z.string().describe('Order id from list_recent_orders') }),
     },
     async ({ orderId }, ctx) => {
@@ -342,6 +373,145 @@ export function registerTools(server: McpServer): void {
           (result.failed.length ? `, ${result.failed.length} failed` : '') +
           `. Cart subtotal ${euro(result.cart.subtotal)}.`;
         return ok(text, { ...result });
+      });
+    },
+  );
+
+  server.registerTool(
+    'get_order_products',
+    {
+      title: 'Get the products of a past order',
+      description:
+        'List every product of one past order with quantity, current price, unit and whether it can still be ordered (requires a connected account). Use list_recent_orders to find the order id, then add_to_cart for the products you want — or reorder to take the whole order.',
+      inputSchema: z.object({
+        orderId: z.string().min(1).describe('Order id from list_recent_orders'),
+      }),
+    },
+    async ({ orderId }, ctx) => {
+      const identity = identityOf(ctx);
+      return runTool(true, identity, async () => {
+        const order = await withClient(identity, (c) => c.getOrder(orderId));
+        const unavailableCount = order.products.filter((p) => p.available === false).length;
+        const header =
+          `Order ${order.id || orderId}` +
+          (order.status ? ` (${order.status})` : '') +
+          (order.orderedAt ? `, ordered ${order.orderedAt}` : '') +
+          ` — ${order.products.length} product(s)` +
+          (unavailableCount ? `, ${unavailableCount} currently unavailable` : '') +
+          `, total ${euro(order.total)}.`;
+        const lines = order.products.map(productLine).join('\n');
+        return ok(`${header}\n` + (lines || '(no products)'), {
+          orderId: order.id || orderId,
+          status: order.status,
+          orderedAt: order.orderedAt,
+          deliveredAt: order.deliveredAt,
+          total: order.total,
+          count: order.products.length,
+          unavailableCount,
+          products: order.products,
+        });
+      });
+    },
+  );
+
+  server.registerTool(
+    'list_favorites',
+    {
+      title: 'List favorites lists',
+      description:
+        "List the account's favorites lists (the site's \"listes favoris\") with their products: id, name, price, unit and availability (requires a connected account). Recurring-purchase shortcut: pass product ids to add_to_cart. Pass listId to expand a single list.",
+      inputSchema: z.object({
+        listId: z.string().min(1).optional().describe('Only this favorites list (id from a previous call)'),
+      }),
+    },
+    async ({ listId }, ctx) => {
+      const identity = identityOf(ctx);
+      return runTool(true, identity, async () => {
+        const result = await withClient(identity, (c) => c.listFavorites({ listId }));
+        const sections = result.lists.map((l) => {
+          const lines = l.products.map(productLine).join('\n');
+          return `## ${l.name} (id ${l.id}) — ${l.products.length} product(s)\n` + (lines || '(empty)');
+        });
+        const text =
+          `${result.lists.length} favorites list(s).\n` +
+          (sections.join('\n\n') || '(none) — add_to_favorites creates one.') +
+          (result.truncated ? '\n(More lists exist; pass listId to expand a specific one.)' : '');
+        return ok(text, {
+          lists: result.lists.map((l) => ({
+            id: l.id,
+            name: l.name,
+            type: l.type,
+            productCount: l.products.length,
+            products: l.products,
+          })),
+          truncated: result.truncated,
+        });
+      });
+    },
+  );
+
+  server.registerTool(
+    'add_to_favorites',
+    {
+      title: 'Add a product to favorites',
+      description:
+        "Add a product to one of the account's favorites lists (requires a connected account). With neither listId nor listName the account's only list is used (created as \"Mes favoris\" if there is none); listName finds or creates a list by name. Adding a product that is already on the list is a no-op. Does not touch the basket.",
+      inputSchema: z.object({
+        productId: z.string().min(1).describe('Product id from search_products, list_usual_products or get_order_products'),
+        listId: z.string().min(1).optional().describe('Favorites list id from list_favorites'),
+        listName: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('Favorites list name; created when no list with that name exists'),
+      }),
+    },
+    async ({ productId, listId, listName }, ctx) => {
+      const identity = identityOf(ctx);
+      return runTool(true, identity, async () => {
+        const result = await withClient(identity, (c) => c.addToFavorites(productId, { listId, listName }));
+        const target = `favorites list "${result.list.name}" (id ${result.list.id})`;
+        const text =
+          (result.alreadyPresent
+            ? `Product ${result.productId} was already on ${target}; nothing changed.`
+            : `Added product ${result.productId} to ${target}${result.created ? ' (list created)' : ''}.`) +
+          ` The list now has ${result.products.length} product(s).`;
+        return ok(text, {
+          productId: result.productId,
+          list: { id: result.list.id, name: result.list.name },
+          created: result.created,
+          alreadyPresent: result.alreadyPresent,
+          productCount: result.products.length,
+          products: result.products,
+        });
+      });
+    },
+  );
+
+  server.registerTool(
+    'remove_from_favorites',
+    {
+      title: 'Remove a product from favorites',
+      description:
+        'Remove a product from a favorites list (requires a connected account). Without listId the product is removed from every list it is on. Removing a product that is on no list is a no-op. Does not touch the basket.',
+      inputSchema: z.object({
+        productId: z.string().min(1).describe('Product id to remove'),
+        listId: z.string().min(1).optional().describe('Favorites list id from list_favorites; omit for all lists'),
+      }),
+    },
+    async ({ productId, listId }, ctx) => {
+      const identity = identityOf(ctx);
+      return runTool(true, identity, async () => {
+        const result = await withClient(identity, (c) => c.removeFromFavorites(productId, { listId }));
+        const names = result.removedFrom.map((l) => `"${l.name}" (id ${l.id})`).join(', ');
+        const text = result.removedFrom.length
+          ? `Removed product ${result.productId} from ${names}.`
+          : `Product ${result.productId} was not on ${listId ? `favorites list ${listId}` : 'any favorites list'}; nothing changed.`;
+        return ok(text, {
+          productId: result.productId,
+          removedFrom: result.removedFrom.map((l) => ({ id: l.id, name: l.name })),
+        });
       });
     },
   );

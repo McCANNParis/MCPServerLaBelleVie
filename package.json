@@ -21,7 +21,8 @@
     "test": "vitest run tests/unit tests/contract",
     "test:watch": "vitest",
     "test:integration": "vitest run tests/integration",
-    "verify-auth": "tsx scripts/verify-auth.ts"
+    "verify-auth": "tsx scripts/verify-auth.ts",
+    "capture-fixtures": "tsx scripts/capture-fixtures.ts"
   },
   "dependencies": {
     "@descope/node-sdk": "^2.14.0",

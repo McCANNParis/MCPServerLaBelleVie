@@ -32,12 +32,19 @@ export interface LbvHttpOptions {
 interface RequestOptions {
   /** Form fields; sets Content-Type to x-www-form-urlencoded. */
   form?: Record<string, string | number>;
+  /** JSON body (Backbone.sync style); sets Content-Type to application/json. */
+  json?: unknown;
   headers?: Record<string, string>;
   accept?: string;
   /** When false, do not send the XHR header / send a browser-like Accept. */
   xhr?: boolean;
   /** Internal: prevents infinite auto re-login loops. */
   _isRetry?: boolean;
+}
+
+/** A 3xx is how this site answers a logged-out request on most endpoints. */
+function isRedirect(res: Response): boolean {
+  return res.status >= 300 && res.status < 400;
 }
 
 /** Parse the `csrfname`/`csrfvalue` hidden inputs from a rendered page. */
@@ -68,7 +75,7 @@ export function saltCsrf(tokens: { csrfname: string; csrfvalue: string }): {
 /**
  * Thin transport around fetch that persists cookies in a tough-cookie jar,
  * performs the La Belle Vie login handshake, and transparently re-logs-in +
- * retries once when an authenticated call fails with a 4xx.
+ * retries once when an authenticated call fails with a 4xx or a redirect.
  */
 export class LbvHttp {
   readonly jar: CookieJar;
@@ -139,6 +146,9 @@ export class LbvHttp {
       for (const [k, v] of Object.entries(opts.form)) params.set(k, String(v));
       body = params.toString();
       headers.set('content-type', 'application/x-www-form-urlencoded; charset=UTF-8');
+    } else if (opts.json !== undefined) {
+      body = JSON.stringify(opts.json);
+      headers.set('content-type', 'application/json; charset=UTF-8');
     }
 
     await this.applyCookies(url, headers);
@@ -146,7 +156,11 @@ export class LbvHttp {
     await this.storeCookies(url, res);
 
     const isAuthEndpoint = path.includes('/connexion');
-    const looksUnauthenticated = res.status === 400 || res.status === 401 || res.status === 403;
+    // Logged-out JSON and page endpoints redirect to `/` rather than answering
+    // 401, so a redirect counts as "unauthenticated" too. login() issues its
+    // own requests with _isRetry, so the handshake can never recurse here.
+    const looksUnauthenticated =
+      isRedirect(res) || res.status === 400 || res.status === 401 || res.status === 403;
     if (looksUnauthenticated && !opts._isRetry && !isAuthEndpoint && this.credentials) {
       const relogged = await this.login().then(
         () => true,
@@ -203,6 +217,8 @@ export class LbvHttp {
   }
 
   private async parseJson<T>(res: Response, path: string): Promise<T> {
+    // A redirect that survived the auto re-login means the session is gone.
+    if (isRedirect(res)) throw new LbvNotAuthenticatedError();
     const text = await res.text();
     let data: unknown;
     try {
@@ -235,6 +251,33 @@ export class LbvHttp {
   ): Promise<T> {
     const res = await this.request('DELETE', path, { ...opts, form });
     return this.parseJson<T>(res, path);
+  }
+
+  /**
+   * POST/PUT/DELETE with an optional JSON body, parsed like getJson. Distinct
+   * from postJson/deleteJson, which keep the cart's form encoding.
+   */
+  async sendJson<T = unknown>(
+    method: 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    body?: unknown,
+    opts: RequestOptions = {},
+  ): Promise<T> {
+    const res = await this.request(method, path, { ...opts, json: body });
+    return this.parseJson<T>(res, path);
+  }
+
+  /**
+   * GET a server-rendered page as text. Sends a browser-like Accept and no XHR
+   * header unless `xhr: true` is passed (some pages then answer with a smaller
+   * fragment of the same markup). A leftover redirect means "logged out".
+   */
+  async getText(path: string, opts: RequestOptions = {}): Promise<string> {
+    const res = await this.request('GET', path, { ...opts, xhr: opts.xhr ?? false });
+    if (isRedirect(res)) throw new LbvNotAuthenticatedError();
+    const text = await res.text();
+    if (!res.ok) throw new LbvApiError(res.status, path, text);
+    return text;
   }
 
   /** Serialize the cookie jar for persistence in the session store. */
