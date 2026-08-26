@@ -43,6 +43,41 @@ function toArray(json: unknown): Record<string, unknown>[] {
   return [];
 }
 
+function decodeHtml(value: string): string {
+  return value
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+export function parseOrderProductsHtml(html: string): OrderProduct[] {
+  const out: OrderProduct[] = [];
+  const re = /<a\b[^>]*href=["'][^"']*\/produit\/(\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of html.matchAll(re)) {
+    if (!out.some((p) => p.productId === match[1])) {
+      out.push({ productId: match[1], name: decodeHtml(match[2]) || null, quantity: 1 });
+    }
+  }
+  return out;
+}
+
+export function parseOrderListHtml(html: string): OrderSummary[] {
+  const out: OrderSummary[] = [];
+  const ids = new Set<string>();
+  for (const re of [
+    /(?:data-order-id|data-order|order_id)=["'](\d+)["']/gi,
+    /href=["'][^"']*\/commande(?:s)?\/(\d+)[^"']*["']/gi,
+  ]) {
+    for (const match of html.matchAll(re)) {
+      if (!ids.has(match[1])) {
+        ids.add(match[1]);
+        out.push({ id: match[1], date: null, total: null, itemCount: null });
+      }
+    }
+  }
+  return out;
+}
+
 export function parseOrderList(json: unknown): OrderSummary[] {
   return toArray(json).map((o) => ({
     id: String(o.id ?? o.order_id ?? o.reference ?? ''),

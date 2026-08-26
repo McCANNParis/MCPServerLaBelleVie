@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrderProductsPath, parseOrderList, parseOrderProducts } from '../../src/lbv/orders';
+import { buildOrderProductsPath, parseOrderList, parseOrderListHtml, parseOrderProducts, parseOrderProductsHtml } from '../../src/lbv/orders';
 
 describe('buildOrderProductsPath', () => {
   it('builds the per-order products path', () => {
@@ -40,5 +40,19 @@ describe('parseOrderProducts', () => {
   it('skips entries with no resolvable id', () => {
     const products = parseOrderProducts([{ quantity: 2 }, { product_id: 5, quantity: 1 }]);
     expect(products).toEqual([{ productId: '5', name: null, quantity: 1 }]);
+  });
+});
+
+describe('HTML fallbacks', () => {
+  it('extracts product links from rendered pages', () => {
+    expect(parseOrderProductsHtml('<a href="/produit/123/banane">Banane BIO</a>')).toEqual([
+      { productId: '123', name: 'Banane BIO', quantity: 1 },
+    ]);
+  });
+
+  it('extracts order ids from rendered pages', () => {
+    expect(parseOrderListHtml('<div data-order-id="456"></div>')).toEqual([
+      { id: '456', date: null, total: null, itemCount: null },
+    ]);
   });
 });

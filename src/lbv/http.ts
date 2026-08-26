@@ -219,6 +219,12 @@ export class LbvHttp {
     return this.parseJson<T>(res, path);
   }
 
+  /** Fetch a rendered page while preserving the authenticated cookie jar. */
+  async getText(path: string): Promise<string> {
+    const res = await this.request('GET', path, { xhr: false, accept: 'text/html,application/xhtml+xml' });
+    return res.text();
+  }
+
   async postJson<T = unknown>(
     path: string,
     form: Record<string, string | number>,

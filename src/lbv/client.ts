@@ -35,7 +35,9 @@ import {
   USUAL_PRODUCTS_PATH,
   buildOrderProductsPath,
   parseOrderList,
+  parseOrderListHtml,
   parseOrderProducts,
+  parseOrderProductsHtml,
   type OrderProduct,
   type OrderSummary,
 } from './orders';
@@ -283,12 +285,22 @@ export class LbvClient {
   // --- Reorder sources (auth-required) ------------------------------------
   async listRecentOrders(): Promise<OrderSummary[]> {
     await this.http.ensureLoggedIn();
-    return parseOrderList(await this.http.getJson<unknown>(RECENT_ORDERS_PATH));
+    const raw = await this.http.getText(RECENT_ORDERS_PATH);
+    try {
+      return parseOrderList(JSON.parse(raw) as unknown);
+    } catch {
+      return parseOrderListHtml(raw);
+    }
   }
 
   async listUsualProducts(): Promise<OrderProduct[]> {
     await this.http.ensureLoggedIn();
-    return parseOrderProducts(await this.http.getJson<unknown>(USUAL_PRODUCTS_PATH));
+    const raw = await this.http.getText(USUAL_PRODUCTS_PATH);
+    try {
+      return parseOrderProducts(JSON.parse(raw) as unknown);
+    } catch {
+      return parseOrderProductsHtml(raw);
+    }
   }
 
   async getOrderProducts(orderId: string | number): Promise<OrderProduct[]> {
