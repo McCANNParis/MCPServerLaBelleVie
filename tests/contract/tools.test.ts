@@ -114,6 +114,7 @@ const EXPECTED_TOOLS = [
   'get_delivery_slots',
   'verify_promo',
   'list_recent_orders',
+  'get_order_products',
   'list_usual_products',
   'reorder',
   'prepare_checkout',

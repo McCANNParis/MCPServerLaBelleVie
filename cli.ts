@@ -90,6 +90,8 @@ function resolveCommand(cmd: string, rest: string[], flags: Parsed['flags']): To
       return { name: 'verify_promo', arguments: { code: rest[0] } };
     case 'orders':
       return { name: 'list_recent_orders', arguments: {} };
+    case 'order-products':
+      return { name: 'get_order_products', arguments: { orderId: rest[0] } };
     case 'usuals':
       return { name: 'list_usual_products', arguments: {} };
     case 'reorder':
@@ -124,6 +126,7 @@ Commands:
   slots <postalCode>                       List delivery slots
   promo <code>                             Verify a promo code (needs connected account)
   orders                                   List recent orders (needs connected account)
+  order-products <orderId>                Read products from one past order
   usuals                                   List usual products (needs connected account)
   reorder <orderId>                        Add a past order into the basket (needs connected account)
   checkout <postalCode> [slotKey]          Ready-to-pay summary (does NOT pay)

@@ -309,6 +309,22 @@ export function registerTools(server: McpServer): void {
   );
 
   server.registerTool(
+    'get_order_products',
+    {
+      title: 'Get products from a past order',
+      description: 'Read the products and quantities from a past order without adding anything to the basket (requires a connected account).',
+      inputSchema: { orderId: z.string().min(1).describe('Order id from list_recent_orders') },
+    },
+    async ({ orderId }, extra) => {
+      const identity = identityFor(extra.authInfo);
+      return runTool(true, identity, async () => {
+        const products = await withClient(identity, (c) => c.getOrderProducts(orderId));
+        return ok(`${products.length} product(s) in order ${orderId}.`, { orderId, products });
+      });
+    },
+  );
+
+  server.registerTool(
     'list_usual_products',
     {
       title: 'List usual products',
