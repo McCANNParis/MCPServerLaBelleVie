@@ -261,11 +261,6 @@ npm run capture-fixtures     # re-capture the orders/favorites responses into a 
   `main`.
 - **`.github/workflows/ci.yml`** (push/PR to `dev` & `main`): install → lint → typecheck → test →
   build, on **Node 24**. Fully mocked, no secrets — this is the merge gate.
-- **GitHub Dependabot** (`.github/dependabot.yml`) is the dependency-check system: weekly npm and
-  GitHub Actions updates target `dev`, with a **5-day** `cooldown` (`default-days: 5`). Production
-  **patches** and development patch/minor auto-merge when CI is green. Security updates ignore the
-  cooldown. Semver majors are not opened by Dependabot. (npm 11.6 does not accept `min-release-age`
-  in a project `.npmrc`, so the cooldown is the install-age gate.)
 - **`.github/workflows/integration.yml`** (manual, via *Run workflow*): runs the live tests with the
   repo secrets `LBV_EMAIL` / `LBV_PASSWORD`, also on Node 24. Kept off the PR path so a flaky
   external API never blocks a merge. Community clones only need this if they add their own secrets.
