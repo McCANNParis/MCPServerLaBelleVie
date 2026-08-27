@@ -28,4 +28,8 @@ Checkout the frozen public snapshot: `git checkout freeze-2026-08-11`
   - route `app/mcp/route.ts`
   - self-host README (placeholder deployment URL)
   - file-backed session store for KV-less local `next dev` (public issue #13)
-  - GitHub Dependabot (npm + Actions, `target-branch: dev`, **5-day** `cooldown.default-days`; npm 11.6 does not honour `min-release-age` in project `.npmrc`) + auto-merge for patches / dev-minors
+
+## local-only-maintainer-process-2026-08-27
+
+- Maintainer process (Dependabot policy, Cursor Automations, `.cursor/`) is local-only and is not published on this repo.
+- Public PR #21 (document overflow as a Cursor Automation) was closed unmerged.
