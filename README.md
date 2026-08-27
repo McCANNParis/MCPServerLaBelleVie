@@ -4,8 +4,9 @@ An [MCP](https://modelcontextprotocol.io) server (plus an optional thin `lbv` CL
 agent do the groceries on [labellevie.com](https://www.labellevie.com) — search the catalog, fill the
 basket, reorder past shops, check delivery coverage and slots, and assemble a **ready-to-pay
 summary**. It is built on the private JSON API the website itself uses (backend: Deleev). This repo
-is a **blueprint for a remote MCP server** for La Belle Vie: deploy it as-is on Vercel, or swap the
-`src/lbv/*` client layer to bring another service to your agent.
+is a **blueprint for a remote MCP server** for La Belle Vie: deploy **your own** copy on
+Vercel (this repository is not a hosted public MCP). Swap the `src/lbv/*` client layer to
+bring another service to your agent. Lineage and freeze tags live in [HISTORY.md](./HISTORY.md).
 
 > **Payment is never automated.** Every flow stops at a ready-to-pay basket and hands you a summary
 > plus the `labellevie.com/panier` link. There is deliberately **no tool that places or pays for an
@@ -100,16 +101,19 @@ connection; each OAuth user gets their own isolated connection.
 
 ## Use it from an agent
 
+This repo is a **template**. Point every client at **your** deployment (`https://<your-app>.vercel.app/mcp`), not at someone else's.
+
 Two independent auth paths hit the same `/mcp` endpoint: **OAuth** (Descope, for Claude
 Desktop/claude.ai connectors) and a **static bearer token** (for the CLI and any MCP client that
 supports headers).
 
 **Claude Desktop / claude.ai (OAuth custom connector):**
 
-1. Settings → Connectors → **Add custom connector** → URL `https://mcp-server-labellevie.vercel.app/mcp`.
-2. Click **Connect** — a Descope sign-in opens. Enter the allow-listed email and the one-time code
+1. Deploy this repo (see [Deploy (Vercel)](#deploy-vercel)).
+2. Settings → Connectors → **Add custom connector** → URL `https://<your-app>.vercel.app/mcp`.
+3. Click **Connect** — a Descope sign-in opens. Enter the allow-listed email and the one-time code
    it receives.
-3. Approve the consent screen; the tools appear.
+4. Approve the consent screen; the tools appear.
 
 Sign-in is by **email one-time code** and access is restricted server-side to a single allow-listed
 address (`LBV_ALLOWED_EMAIL`): any other account — even one that completes the Descope flow — is
@@ -118,7 +122,7 @@ rejected with a 401. Self-registration is blocked in Descope besides.
 **Claude Code:**
 
 ```bash
-claude mcp add --transport http labellevie https://mcp-server-labellevie.vercel.app/mcp \
+claude mcp add --transport http labellevie https://<your-app>.vercel.app/mcp \
   --header "Authorization: Bearer $LBV_API_TOKEN"
 ```
 
@@ -129,7 +133,7 @@ claude mcp add --transport http labellevie https://mcp-server-labellevie.vercel.
   "mcpServers": {
     "labellevie": {
       "type": "http",
-      "url": "https://mcp-server-labellevie.vercel.app/mcp",
+      "url": "https://<your-app>.vercel.app/mcp",
       "headers": { "Authorization": "Bearer <LBV_API_TOKEN>" }
     }
   }
@@ -144,7 +148,7 @@ server.
 ```bash
 npm run build:cli          # produces dist/cli.js (the `lbv` bin)
 
-export LBV_MCP_URL="https://mcp-server-labellevie.vercel.app/mcp"
+export LBV_MCP_URL="https://<your-app>.vercel.app/mcp"
 export LBV_API_TOKEN="…"
 
 lbv search "banane bio" --perPage 5
@@ -186,6 +190,9 @@ npx @modelcontextprotocol/inspector      # point it at http://localhost:3000/mcp
 LBV_MCP_URL=http://localhost:3000/mcp LBV_API_TOKEN=dev-token lbv search "lait"
 ```
 
+Without KV, `connect_account` links are stored in gitignored `.lbv-dev-store.json` so the `/mcp`
+and `/connect` routes share state. Production **must** use Vercel KV / Upstash.
+
 Health check (no auth): `GET /api/health` reports liveness and whether the bearer token / OAuth /
 KV / `LBV_CRED_KEY` are configured, plus `connectReady` (KV **and** key present — the
 account-connect flow will work). It never returns secrets.
@@ -205,7 +212,7 @@ Server variables go in the **Vercel project**; `LBV_EMAIL`/`LBV_PASSWORD` live o
 | `LBV_ALLOWED_SUBJECT` | Same boundary keyed on the Descope user id (`U…`) in `sub` — covers tokens without an email claim; either match suffices |
 | `DESCOPE_BASE_URL` | Optional Descope regional base URL (default `https://api.descope.com`) |
 | `DESCOPE_MANAGEMENT_KEY` | Local `descope` CLI only — **never** on Vercel, never committed |
-| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV — account connections, one-time connect links, cookie jars. **Required in production**; the in-memory fallback is local-dev only. |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV — account connections, one-time connect links, cookie jars. **Required in production**. Local `next dev` without KV uses `.lbv-dev-store.json`. |
 | `LBV_MCP_URL` | CLI only — the server URL (default `http://localhost:3000/mcp`) |
 
 See [`.env.example`](./.env.example).
@@ -250,32 +257,46 @@ npm run capture-fixtures     # re-capture the orders/favorites responses into a 
 
 ## CI/CD & branches
 
-- **`main`** = production (protected), **`dev`** = staging. Flow: feature branch → PR → `dev` → PR →
+- **`main`** = published template tip, **`dev`** = integration. Flow: feature branch → PR → `dev` → PR →
   `main`.
 - **`.github/workflows/ci.yml`** (push/PR to `dev` & `main`): install → lint → typecheck → test →
   build, on **Node 24**. Fully mocked, no secrets — this is the merge gate.
+- **GitHub Dependabot** (`.github/dependabot.yml`) is the dependency-check system: weekly npm and
+  GitHub Actions updates target `dev`, with a **5-day** `cooldown` (`default-days: 5`). Production
+  **patches** and development patch/minor auto-merge when CI is green. Security updates ignore the
+  cooldown. Semver majors are not opened by Dependabot. (npm 11.6 does not accept `min-release-age`
+  in a project `.npmrc`, so the cooldown is the install-age gate.)
 - **`.github/workflows/integration.yml`** (manual, via *Run workflow*): runs the live tests with the
   repo secrets `LBV_EMAIL` / `LBV_PASSWORD`, also on Node 24. Kept off the PR path so a flaky
-  external API never blocks a merge.
+  external API never blocks a merge. Community clones only need this if they add their own secrets.
+
+Lineage: [HISTORY.md](./HISTORY.md). Frozen snapshot: `git checkout freeze-2026-08-11`.
 
 ### Deploy (Vercel)
 
-Deployment uses Vercel's native Git integration (one-time setup):
+This is **your** MCP. Import **this** repository as a **new** Vercel project — do not attach it to
+someone else's existing deployment.
 
-1. Import this repo into a Vercel project.
-2. Set the environment variables above (`LBV_API_TOKEN`, `LBV_CRED_KEY`, `DESCOPE_PROJECT_ID`,
-   `LBV_ALLOWED_EMAIL`, KV). Do **not** set `LBV_EMAIL`/`LBV_PASSWORD` — if migrating from an older
-   deploy, delete them. Env changes only apply to **new** deployments — redeploy after changing
-   them.
-3. Add a Vercel KV (Upstash Redis) store to the project (required for the connect flow).
-4. Push `dev` → **Preview** deploy; PR `dev` → `main` → **Production** deploy.
-5. From each MCP client, run `connect_account` once and complete the browser login.
+```bash
+git clone https://github.com/McCANNParis/MCPServerLaBelleVie.git
+cd MCPServerLaBelleVie
+```
+
+1. Fork or clone [`McCANNParis/MCPServerLaBelleVie`](https://github.com/McCANNParis/MCPServerLaBelleVie).
+2. In Vercel: **Add New… → Project** → import that GitHub repo (production branch `main`).
+3. Marketplace: add a KV / Upstash Redis store so `KV_REST_API_URL` and `KV_REST_API_TOKEN` are injected.
+4. Set `LBV_API_TOKEN` and `LBV_CRED_KEY` (`openssl rand -hex 32` for each). Optional OAuth:
+   `DESCOPE_PROJECT_ID` plus `LBV_ALLOWED_EMAIL` (and/or `LBV_ALLOWED_SUBJECT`). Do **not** set
+   `LBV_EMAIL` / `LBV_PASSWORD` on Vercel — each user connects through `connect_account`.
+5. Deploy. Env changes apply only to **new** deployments — redeploy after changing them.
+6. From each MCP client, run `connect_account` once and complete the browser login.
+7. Point Claude / the CLI at `https://<your-app>.vercel.app/mcp`.
 
 Vercel picks the function runtime from `engines.node` in `package.json` (**Node 24**) — no runtime
 setting to configure in the dashboard.
 
-Add the same `LBV_EMAIL` / `LBV_PASSWORD` as **GitHub Actions secrets** to enable the integration
-workflow.
+Add `LBV_EMAIL` / `LBV_PASSWORD` as **GitHub Actions secrets** only if you want the optional live
+integration workflow.
 
 ## Notes & limitations
 

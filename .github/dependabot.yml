@@ -1,0 +1,53 @@
+# Dependency-check system for this public template.
+# Version updates land on `dev`. Security updates ignore target-branch and
+# cooldown: GitHub opens them against default `main`.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    cooldown:
+      default-days: 5
+    open-pull-requests-limit: 10
+    groups:
+      production-patch:
+        applies-to: version-updates
+        dependency-type: "production"
+        update-types: ["patch"]
+      production-minor:
+        applies-to: version-updates
+        dependency-type: "production"
+        update-types: ["minor"]
+      dev-dependencies:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    cooldown:
+      default-days: 5
+    open-pull-requests-limit: 5
+    groups:
+      github-actions-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["patch"]
+      github-actions-minor:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor"]

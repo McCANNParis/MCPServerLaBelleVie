@@ -1,0 +1,125 @@
+# Auto-merge for Dependabot pull requests.
+#
+# THIS WORKFLOW IS ONLY SAFE ON A PROTECTED BRANCH. `gh pr merge --auto` waits
+# for required status checks — and when a branch has none, "waits for nothing"
+# means it merges immediately. The guard job skips auto-merge unless the base
+# branch reports at least one required status check.
+#
+# Auto-merges:
+#   - production (and transitive) patch version updates
+#   - development patch or minor
+#   - verified single-package security *patches* (Dependabot omits update-type)
+# Leaves open: production minors, all majors, Action minors/majors, unverified
+# security groups.
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Dependabot auto-merge
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'McCANNParis/MCPServerLaBelleVie'
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2.4.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the base branch is protected
+        id: protection
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -uo pipefail
+          if ! branch=$(gh api "repos/${GITHUB_REPOSITORY}/branches/${BASE}" 2>&1); then
+            echo "protected=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Could not read branch '${BASE}'. Auto-merge skipped."
+            exit 0
+          fi
+          protected=$(printf '%s' "$branch" | jq -r '.protected // false')
+          contexts=$(printf '%s' "$branch" | jq '.protection.required_status_checks.contexts // [] | length')
+          echo "branch '${BASE}': protected=${protected}, required status checks=${contexts}"
+          if [ "${contexts}" -ge 1 ]; then
+            echo "protected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "protected=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No required status checks on '${BASE}'. Auto-merge skipped."
+          fi
+
+      # Dependabot security PRs have empty update-type. Reconstruct a patch
+      # signal from title + branch + a single dependency name.
+      - name: Is this a security patch?
+        id: secpatch
+        if: steps.metadata.outputs.update-type == ''
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          DEP_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+        run: |
+          set -uo pipefail
+          verify() {
+            case "$DEP_NAMES" in
+              "" | *,*) return 1 ;;
+            esac
+            local esc re
+            esc=$(printf '%s' "$DEP_NAMES" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+            re="^(chore\(deps[^)]*\): )?Bump ${esc} from ([0-9]+)\.([0-9]+)\.([0-9]+) to ([0-9]+)\.([0-9]+)\.([0-9]+)$"
+            if [[ ! "$PR_TITLE" =~ $re ]]; then
+              return 1
+            fi
+            local fmaj fmin fpat tmaj tmin tpat
+            fmaj=$((10#${BASH_REMATCH[2]})); fmin=$((10#${BASH_REMATCH[3]})); fpat=$((10#${BASH_REMATCH[4]}))
+            tmaj=$((10#${BASH_REMATCH[5]})); tmin=$((10#${BASH_REMATCH[6]})); tpat=$((10#${BASH_REMATCH[7]}))
+            if [ "$tmaj" -ne "$fmaj" ] || [ "$tmin" -ne "$fmin" ] || [ "$tpat" -le "$fpat" ]; then
+              return 1
+            fi
+            case "$HEAD_REF" in
+              *-"${tmaj}.${tmin}.${tpat}") ;;
+              *) return 1 ;;
+            esac
+            return 0
+          }
+          if verify; then
+            echo "is_patch=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_patch=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable auto-merge
+        if: >-
+          steps.protection.outputs.protected == 'true' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+           (steps.metadata.outputs.dependency-type == 'direct:development' &&
+            steps.metadata.outputs.update-type == 'version-update:semver-minor') ||
+           steps.secpatch.outputs.is_patch == 'true')
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Explain a skipped merge
+        if: >-
+          steps.protection.outputs.protected == 'true' &&
+          !(steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+            (steps.metadata.outputs.dependency-type == 'direct:development' &&
+             steps.metadata.outputs.update-type == 'version-update:semver-minor') ||
+            steps.secpatch.outputs.is_patch == 'true')
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          DEPENDENCY_TYPE: ${{ steps.metadata.outputs.dependency-type }}
+          DEPENDENCY_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+        run: |
+          if [ -z "${UPDATE_TYPE}" ]; then
+            echo "::notice::Left open for manual review — security update on ${DEPENDENCY_TYPE} (${DEPENDENCY_NAMES}); could not verify a single-package patch bump."
+          else
+            echo "::notice::Left open for manual review — ${UPDATE_TYPE} on ${DEPENDENCY_TYPE} (${DEPENDENCY_NAMES})."
+          fi
