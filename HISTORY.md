@@ -29,3 +29,9 @@ Checkout the frozen public snapshot: `git checkout freeze-2026-08-11`
   - self-host README (placeholder deployment URL)
   - file-backed session store for KV-less local `next dev` (public issue #13)
   - GitHub Dependabot (npm + Actions, `target-branch: dev`, **5-day** `cooldown.default-days`; npm 11.6 does not honour `min-release-age` in project `.npmrc`) + auto-merge for patches / dev-minors
+
+## cursor-sdk-deps-agent-2026-08-27
+
+- Weekly GitHub Action `.github/workflows/deps-cursor-agent.yml` (Monday 07:00 UTC, plus `workflow_dispatch`) launches a Cursor cloud agent with pinned `@cursor/sdk@1.0.28` against `dev` (`autoCreatePR`, `skipReviewerRequest`, ISO-week idempotency key).
+- Overflow only: semver majors, red Dependabot CI, Aikido malware feed. Prompt remains `.cursor/automations/deps-security.md`. Script: `scripts/run-deps-automation.mjs`.
+- Requires repo secret `CURSOR_API_KEY`. Job is skipped on forks (`github.repository == McCANNParis/MCPServerLaBelleVie`). `@cursor/sdk` is not a dependency of the grocery MCP.

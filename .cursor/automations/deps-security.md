@@ -6,7 +6,9 @@ the same packages. Rebase or fix CI on that PR instead.
 
 ## When this automation runs
 
-Scheduled (Monday). Work from branch `dev` of `McCANNParis/MCPServerLaBelleVie`.
+Scheduled Monday 07:00 UTC by `.github/workflows/deps-cursor-agent.yml`, which
+launches a Cursor cloud agent (`@cursor/sdk`, `autoCreatePR` into `dev`).
+Work from branch `dev` of `McCANNParis/MCPServerLaBelleVie`.
 
 ## What to do
 
