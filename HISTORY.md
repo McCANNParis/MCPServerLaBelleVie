@@ -29,3 +29,9 @@ Checkout the frozen public snapshot: `git checkout freeze-2026-08-11`
   - self-host README (placeholder deployment URL)
   - file-backed session store for KV-less local `next dev` (public issue #13)
   - GitHub Dependabot (npm + Actions, `target-branch: dev`, **5-day** `cooldown.default-days`; npm 11.6 does not honour `min-release-age` in project `.npmrc`) + auto-merge for patches / dev-minors
+
+## cursor-automations-overflow-2026-08-27
+
+- Overflow trigger is a **Cursor Automation** (weekly Monday on `dev`), not a GitHub Action and not `@cursor/sdk`.
+- Public PR #19 (SDK launcher: `.github/workflows/deps-cursor-agent.yml` + `scripts/run-deps-automation.mjs`) was closed unmerged. No `CURSOR_API_KEY` on this repo.
+- Prompt remains `.cursor/automations/deps-security.md` (Dependabot still owns weekly version PRs).

@@ -266,6 +266,9 @@ npm run capture-fixtures     # re-capture the orders/favorites responses into a 
   **patches** and development patch/minor auto-merge when CI is green. Security updates ignore the
   cooldown. Semver majors are not opened by Dependabot. (npm 11.6 does not accept `min-release-age`
   in a project `.npmrc`, so the cooldown is the install-age gate.)
+- **Cursor Automation** (canonical repo only): weekly overflow for **semver majors**, red
+  Dependabot CI, and the Aikido malware feed. Prompt: `.cursor/automations/deps-security.md`.
+  Community clones do not need this.
 - **`.github/workflows/integration.yml`** (manual, via *Run workflow*): runs the live tests with the
   repo secrets `LBV_EMAIL` / `LBV_PASSWORD`, also on Node 24. Kept off the PR path so a flaky
   external API never blocks a merge. Community clones only need this if they add their own secrets.

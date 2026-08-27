@@ -6,7 +6,8 @@ the same packages. Rebase or fix CI on that PR instead.
 
 ## When this automation runs
 
-Scheduled (Monday). Work from branch `dev` of `McCANNParis/MCPServerLaBelleVie`.
+Cursor Automation (weekly Monday) on `McCANNParis/MCPServerLaBelleVie`,
+branch `dev`. Optional webhook for an on-demand run. Not a GitHub Action.
 
 ## What to do
 
