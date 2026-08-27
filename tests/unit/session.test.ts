@@ -1,5 +1,13 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { getSessionStore, sessionKeyFor, setSessionStore } from '../../src/session';
+import {
+  FileSessionStore,
+  getSessionStore,
+  sessionKeyFor,
+  setSessionStore,
+} from '../../src/session';
 
 const KV_VARS = [
   'KV_REST_API_URL',
@@ -42,6 +50,35 @@ describe('getSessionStore (in-memory fallback)', () => {
 
   it('memoizes the store instance', () => {
     expect(getSessionStore()).toBe(getSessionStore());
+  });
+
+  it('uses the in-memory store under Vitest (not the local JSON file)', () => {
+    expect(getSessionStore().constructor.name).toBe('InMemorySessionStore');
+  });
+});
+
+describe('FileSessionStore', () => {
+  let dir: string;
+  let store: FileSessionStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'lbv-session-'));
+    store = new FileSessionStore(join(dir, '.lbv-dev-store.json'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('round-trips a value across a second instance on the same file', async () => {
+    const key = 'lbv:link:abc';
+    await store.save(key, { email: 'shopper@example.com', attempts: 0 });
+
+    const other = new FileSessionStore(join(dir, '.lbv-dev-store.json'));
+    expect(await other.load(key)).toEqual({ email: 'shopper@example.com', attempts: 0 });
+
+    await other.clear(key);
+    expect(await store.load(key)).toBeNull();
   });
 });
 

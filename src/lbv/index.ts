@@ -7,5 +7,7 @@ export * from './cart';
 export * from './slots';
 export * from './promo';
 export * from './orders';
+export * from './product';
+export * from './favorites';
 export * from './profile';
 export * from './client';

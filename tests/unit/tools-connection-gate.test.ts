@@ -1,6 +1,5 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Client } from '@modelcontextprotocol/client';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionRecord } from '../../src/connections';
 import { saveConnection } from '../../src/connections';
@@ -18,6 +17,7 @@ vi.mock('../../src/runtime', async () => {
   const { LbvNotAuthenticatedError } = await import('../../src/lbv/errors');
   const fakeClient = {
     listRecentOrders: async () => [],
+    listFavorites: async () => ({ lists: [], truncated: false }),
     getCart: async () => ({
       itemCount: 0,
       lines: [],
@@ -121,6 +121,25 @@ describe('per-identity connection gate', () => {
     state.mode = 'not-authenticated';
     const client = await connect();
     const res = await client.callTool({ name: 'list_recent_orders', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    expect(textOf(res)).toMatch(NUDGE);
+  });
+
+  it('list_favorites is gated the same way: nudge without a connection, nudge on a stale session', async () => {
+    let client = await connect();
+    let res = await client.callTool({ name: 'list_favorites', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    expect(textOf(res)).toMatch(NUDGE);
+
+    await saveConnection(STATIC_TOKEN_IDENTITY, dummyRecord());
+    client = await connect();
+    res = await client.callTool({ name: 'list_favorites', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    expect(textOf(res)).toContain('0 favorites list(s)');
+
+    state.mode = 'not-authenticated';
+    client = await connect();
+    res = await client.callTool({ name: 'list_favorites', arguments: {} });
     expect(res.isError).toBeFalsy();
     expect(textOf(res)).toMatch(NUDGE);
   });

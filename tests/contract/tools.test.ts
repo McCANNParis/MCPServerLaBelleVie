@@ -1,7 +1,9 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { Client } from '@modelcontextprotocol/client';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { saveConnection } from '../../src/connections';
+import { STATIC_TOKEN_IDENTITY } from '../../src/identity';
+import { setSessionStore } from '../../src/session';
 
 // A fake LbvClient with just the methods the exercised tools call. Defined via
 // vi.hoisted so the vi.mock factory below can close over it.
@@ -16,8 +18,39 @@ const { fakeClient } = vi.hoisted(() => {
     creditsUsed: 0,
     selectedDay: null,
   };
+  const favoriteProduct = {
+    productId: '49135',
+    name: 'Banane BIO',
+    quantity: 1,
+    price: 0.49,
+    unit: 'kg',
+    available: true,
+  };
+  const favoriteList = { id: '7', name: 'Mes favoris', type: 'first', order: 0, productIds: ['49135'] };
   return {
     fakeClient: {
+      listRecentOrders: async () => [{ id: '1001', date: '2025-03-03', total: null, itemCount: 24 }],
+      listUsualProducts: async () => [{ ...favoriteProduct, category: 'Le primeur' }],
+      getOrder: async (orderId: string) => ({
+        id: orderId,
+        status: 'received',
+        orderedAt: '2025-03-03T09:12:41+01:00',
+        deliveredAt: '2025-03-03T18:00:00+01:00',
+        total: 15.74,
+        products: [
+          favoriteProduct,
+          { productId: '424242', name: 'Produit retiré', quantity: 2, price: null, unit: null, available: false },
+        ],
+      }),
+      listFavorites: async () => ({ lists: [{ ...favoriteList, products: [favoriteProduct] }], truncated: false }),
+      addToFavorites: async (productId: string) => ({
+        productId,
+        list: favoriteList,
+        created: true,
+        alreadyPresent: false,
+        products: [favoriteProduct],
+      }),
+      removeFromFavorites: async (productId: string) => ({ productId, removedFrom: [favoriteList] }),
       searchProducts: async () => ({
         found: 119,
         page: 1,
@@ -116,6 +149,10 @@ const EXPECTED_TOOLS = [
   'list_recent_orders',
   'list_usual_products',
   'reorder',
+  'get_order_products',
+  'list_favorites',
+  'add_to_favorites',
+  'remove_from_favorites',
   'prepare_checkout',
   'connect_account',
   'connection_status',
@@ -139,8 +176,22 @@ describe('MCP tool contract', () => {
   let tools: Awaited<ReturnType<Client['listTools']>>['tools'];
 
   beforeAll(async () => {
+    // The `connect`-gated tools check for a stored connection before touching the
+    // (mocked) client, so give the static-token identity one in the in-memory store.
+    setSessionStore(null);
+    await saveConnection(STATIC_TOKEN_IDENTITY, {
+      lbvEmail: 'shopper@example.com',
+      creds: { iv: 'aa', tag: 'bb', ciphertext: 'cc' },
+      jar: { cookies: [] },
+      connectedAt: 1700000000000,
+      lastUsedAt: 1700000000000,
+    });
     client = await connect();
     tools = (await client.listTools()).tools;
+  });
+
+  afterAll(() => {
+    setSessionStore(null);
   });
 
   it('exposes exactly the expected tool set', () => {
@@ -174,6 +225,73 @@ describe('MCP tool contract', () => {
     expect(browse?.inputSchema.required ?? []).not.toContain('query');
     const add = tools.find((t) => t.name === 'add_to_cart');
     expect(add?.inputSchema.properties).toHaveProperty('productId');
+    const order = tools.find((t) => t.name === 'get_order_products');
+    expect(order?.inputSchema.required).toContain('orderId');
+    const favorites = tools.find((t) => t.name === 'list_favorites');
+    expect(favorites?.inputSchema.properties).toHaveProperty('listId');
+    expect(favorites?.inputSchema.required ?? []).not.toContain('listId');
+    const favorite = tools.find((t) => t.name === 'add_to_favorites');
+    expect(favorite?.inputSchema.required).toContain('productId');
+    expect(favorite?.inputSchema.required ?? []).not.toContain('listId');
+    expect(favorite?.inputSchema.required ?? []).not.toContain('listName');
+    const unfavorite = tools.find((t) => t.name === 'remove_from_favorites');
+    expect(unfavorite?.inputSchema.required).toContain('productId');
+    expect(unfavorite?.inputSchema.required ?? []).not.toContain('listId');
+  });
+
+  it('list_recent_orders reports item counts and points at get_order_products', async () => {
+    const res = await client.callTool({ name: 'list_recent_orders', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    const text = JSON.stringify(res.content);
+    expect(text).toContain('[1001] 2025-03-03 — 24 product(s)');
+    expect(text).toContain('get_order_products');
+    expect(res.structuredContent).toMatchObject({ orders: [{ id: '1001', itemCount: 24 }] });
+  });
+
+  it('list_usual_products shows price, unit and aisle', async () => {
+    const res = await client.callTool({ name: 'list_usual_products', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    expect(JSON.stringify(res.content)).toContain('[49135] Banane BIO — €0.49 / kg (Le primeur)');
+  });
+
+  it('get_order_products flags unavailable products', async () => {
+    const res = await client.callTool({ name: 'get_order_products', arguments: { orderId: '1001' } });
+    expect(res.isError).toBeFalsy();
+    expect(res.structuredContent).toMatchObject({ orderId: '1001', count: 2, unavailableCount: 1, total: 15.74 });
+    const text = JSON.stringify(res.content);
+    expect(text).toContain('[49135] Banane BIO ×1 — €0.49 / kg');
+    expect(text).toContain('[424242] Produit retiré ×2 — — — UNAVAILABLE');
+  });
+
+  it('list_favorites returns every list with its products', async () => {
+    const res = await client.callTool({ name: 'list_favorites', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    expect(res.structuredContent).toMatchObject({
+      truncated: false,
+      lists: [{ id: '7', name: 'Mes favoris', productCount: 1 }],
+    });
+    expect(JSON.stringify(res.content)).toContain('Banane BIO');
+  });
+
+  it('add_to_favorites reports the list it used and whether it created it', async () => {
+    const res = await client.callTool({ name: 'add_to_favorites', arguments: { productId: '49135' } });
+    expect(res.isError).toBeFalsy();
+    expect(res.structuredContent).toMatchObject({
+      productId: '49135',
+      list: { id: '7', name: 'Mes favoris' },
+      created: true,
+      alreadyPresent: false,
+      productCount: 1,
+    });
+    expect(JSON.stringify(res.content)).toContain('list created');
+  });
+
+  it('remove_from_favorites lists the affected lists', async () => {
+    const res = await client.callTool({ name: 'remove_from_favorites', arguments: { productId: '49135' } });
+    expect(res.isError).toBeFalsy();
+    expect(res.structuredContent).toMatchObject({ productId: '49135', removedFrom: [{ id: '7' }] });
+    const [first] = res.content as { type: string; text?: string }[];
+    expect(first.text).toContain('Removed product 49135 from "Mes favoris" (id 7)');
   });
 
   it('search_products returns structured results', async () => {

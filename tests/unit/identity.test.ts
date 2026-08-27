@@ -1,4 +1,4 @@
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { AuthInfo } from '@modelcontextprotocol/server';
 import { describe, expect, it } from 'vitest';
 import { STATIC_TOKEN_IDENTITY, hashIdentity, identityFor } from '../../src/identity';
 

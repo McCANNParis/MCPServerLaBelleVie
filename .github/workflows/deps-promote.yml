@@ -1,0 +1,37 @@
+# After a Dependabot PR merges into `dev`, open (or reuse) a PR to `main` and
+# enable auto-merge behind the same required CI check.
+name: Promote Dependabot merges to main
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    name: Open or reuse dev → main
+    if: >-
+      github.event.pull_request.merged &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'McCANNParis/MCPServerLaBelleVie'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or reuse promotion PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head dev --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Reusing open promotion PR #$existing"
+            gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$existing" || true
+            exit 0
+          fi
+          url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head dev \
+            --title "chore(deps): promote Dependabot merges to main" \
+            --body "Dependabot updates landed on \`dev\` and CI was green. This promotion PR auto-merges when the required CI check on \`main\` is green.")
+          gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$url"

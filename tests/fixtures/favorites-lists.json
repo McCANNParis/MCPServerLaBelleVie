@@ -1,0 +1,56 @@
+[
+  {
+    "name": "Mes favoris",
+    "type": "first",
+    "order": 0,
+    "created_at": "2025-01-10T10:00:00.000Z",
+    "id": 501,
+    "products": [
+      {
+        "list_id": 501,
+        "product_id": 19967,
+        "quantity": 1,
+        "order": 0
+      },
+      {
+        "list_id": 501,
+        "product_id": 81991,
+        "quantity": 1,
+        "order": 0
+      },
+      {
+        "list_id": 501,
+        "product_id": 97457,
+        "quantity": 1,
+        "order": 0
+      },
+      {
+        "list_id": 501,
+        "product_id": 39495,
+        "quantity": 1,
+        "order": 0
+      }
+    ]
+  },
+  {
+    "name": "Courses de la semaine",
+    "type": "default",
+    "order": 2,
+    "created_at": "2025-01-10T10:00:00.000Z",
+    "id": 502,
+    "products": [
+      {
+        "list_id": 502,
+        "product_id": 19967,
+        "quantity": 1,
+        "order": 0
+      },
+      {
+        "list_id": 502,
+        "product_id": 81991,
+        "quantity": 1,
+        "order": 0
+      }
+    ]
+  }
+]

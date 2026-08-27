@@ -2,8 +2,10 @@ import { createMcpHandler, withMcpAuth } from 'mcp-handler';
 import { verifyToken } from '../../src/auth';
 import { registerTools } from '../../src/tools';
 
-// Streamable-HTTP MCP endpoint. With basePath '' the transport segment lives at
-// the app root, so the endpoint is `/mcp` (and legacy `/sse`).
+// Streamable-HTTP MCP endpoint, mounted at /mcp. mcp-handler v2 no longer routes
+// by transport segment — the handler serves whatever route it is mounted on, so
+// this is a fixed path rather than the old `[transport]` dynamic segment (the
+// legacy `/sse` transport is gone with it).
 const handler = createMcpHandler(
   (server) => {
     registerTools(server);
@@ -11,11 +13,6 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: 'labellevie-mcp', version: '0.1.0' },
     capabilities: { tools: {} },
-  },
-  {
-    basePath: '',
-    maxDuration: 60,
-    redisUrl: process.env.REDIS_URL,
     verboseLogs: process.env.NODE_ENV === 'development',
   },
 );
@@ -27,5 +24,7 @@ const authHandler = withMcpAuth(handler, verifyToken, {
   requiredScopes: ['groceries'],
   resourceMetadataPath: '/.well-known/oauth-protected-resource',
 });
+
+export const maxDuration = 60;
 
 export { authHandler as GET, authHandler as POST, authHandler as DELETE };

@@ -30,26 +30,26 @@ async function getMetadata(req: Request): Promise<Record<string, unknown>> {
 describe('GET /.well-known/oauth-protected-resource', () => {
   it('emits the /mcp endpoint URL as the resource, not the bare origin', async () => {
     const metadata = await getMetadata(
-      new Request('https://mcp-server-labellevie.vercel.app/.well-known/oauth-protected-resource'),
+      new Request('https://mcp.example.com/.well-known/oauth-protected-resource'),
     );
-    expect(metadata.resource).toBe('https://mcp-server-labellevie.vercel.app/mcp');
+    expect(metadata.resource).toBe('https://mcp.example.com/mcp');
   });
 
   it('derives the public origin from proxy headers (Vercel)', async () => {
     const metadata = await getMetadata(
       new Request('http://localhost:3000/.well-known/oauth-protected-resource', {
         headers: {
-          'x-forwarded-host': 'mcp-server-labellevie.vercel.app',
+          'x-forwarded-host': 'mcp.example.com',
           'x-forwarded-proto': 'https',
         },
       }),
     );
-    expect(metadata.resource).toBe('https://mcp-server-labellevie.vercel.app/mcp');
+    expect(metadata.resource).toBe('https://mcp.example.com/mcp');
   });
 
   it('advertises the Descope issuer and the groceries scope', async () => {
     const metadata = await getMetadata(
-      new Request('https://mcp-server-labellevie.vercel.app/.well-known/oauth-protected-resource'),
+      new Request('https://mcp.example.com/.well-known/oauth-protected-resource'),
     );
     expect(metadata.authorization_servers).toEqual([
       'https://api.descope.com/v1/apps/P2testProjectId',
@@ -60,14 +60,14 @@ describe('GET /.well-known/oauth-protected-resource', () => {
   it('emits an empty authorization_servers list when OAuth is unconfigured', async () => {
     delete process.env.DESCOPE_PROJECT_ID;
     const metadata = await getMetadata(
-      new Request('https://mcp-server-labellevie.vercel.app/.well-known/oauth-protected-resource'),
+      new Request('https://mcp.example.com/.well-known/oauth-protected-resource'),
     );
     expect(metadata.authorization_servers).toEqual([]);
   });
 
   it('allows cross-origin reads (Claude fetches this from the browser)', () => {
     const res = GET(
-      new Request('https://mcp-server-labellevie.vercel.app/.well-known/oauth-protected-resource'),
+      new Request('https://mcp.example.com/.well-known/oauth-protected-resource'),
     );
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
   });
