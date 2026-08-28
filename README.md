@@ -2,8 +2,9 @@
 
 An [MCP](https://modelcontextprotocol.io) server (plus an optional thin `lbv` CLI) that lets an AI
 agent do the groceries on [labellevie.com](https://www.labellevie.com) — search the catalog, fill the
-basket, reorder past shops, check delivery coverage and slots, and assemble a **ready-to-pay
-summary**. It is built on the private JSON API the website itself uses (backend: Deleev). This repo
+basket, reorder past shops, manage favorites lists, check delivery coverage and slots, and assemble a
+**ready-to-pay summary**. It is built on the private JSON API the website itself uses (backend:
+Deleev). This repo
 is a **blueprint for a remote MCP server** for La Belle Vie: deploy **your own** copy on
 Vercel (this repository is not a hosted public MCP). Swap the `src/lbv/*` client layer to
 bring another service to your agent. Lineage and freeze tags live in [HISTORY.md](./HISTORY.md).
@@ -36,6 +37,9 @@ written once in `src/lbv/*` and both surfaces are thin.
 
 ## Tools
 
+The server registers **20 tools** (the contract test asserts this set exactly). There is no tool
+that places or pays for an order.
+
 | Tool | Auth | What it does |
 |---|---|---|
 | `search_products(query, page?, perPage?, categoryId?)` | — | Search the catalog (id, name, price, unit, stock, sale, categories); `categoryId` keeps only products in that category or its subcategories |
@@ -52,7 +56,7 @@ written once in `src/lbv/*` and both surfaces are thin.
 | `list_usual_products()` | connect | Most-ordered products with price, unit and aisle |
 | `reorder(orderId)` | connect | Add every product from a past order into the basket |
 | `list_favorites(listId?)` | connect | The account's favorites lists (the site's "listes favoris") with their products |
-| `add_to_favorites(productId, listId?, listName?)` | connect | Add a product to a favorites list; `listName` finds or creates the list, no list at all → "Mes favoris" |
+| `add_to_favorites(productId, listId?, listName?)` | connect | Add a product to a favorites list; `listName` finds or creates the list. Omit both list args only when the account has one list (none → creates "Mes favoris"; two or more → pass `listId` or `listName`) |
 | `remove_from_favorites(productId, listId?)` | connect | Remove a product from one list, or from every list it is on |
 | `prepare_checkout(postalCode, slotKey?)` | — | Ready-to-pay summary (totals, coverage, recommended slot, stock check, basket URL). **Does NOT pay.** |
 | `connect_account()` | — | One-time secure browser link to connect **your** LBV account — the password never passes through the chat |
