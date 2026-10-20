@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@descope/node-sdk": "^2.14.0",
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.3.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@upstash/redis": "^1.38.0",
     "mcp-handler": "^2.1.0",
