@@ -72,7 +72,7 @@ jobs:
             esac
             local esc re
             esc=$(printf '%s' "$DEP_NAMES" | sed 's/[][\.*^$+?(){}|]/\\&/g')
-            re="^(chore\(deps[^)]*\): )?Bump ${esc} from ([0-9]+)\.([0-9]+)\.([0-9]+) to ([0-9]+)\.([0-9]+)\.([0-9]+)$"
+            re="^([^:]*: )?[Bb]ump ${esc} from ([0-9]+)\.([0-9]+)\.([0-9]+) to ([0-9]+)\.([0-9]+)\.([0-9]+)( in /[^ ]*)?$"
             if [[ ! "$PR_TITLE" =~ $re ]]; then
               return 1
             fi
