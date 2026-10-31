@@ -78,6 +78,34 @@ function originOf(ctx: ServerContext): string {
   return req ? getPublicOrigin(req) : 'http://localhost:3000';
 }
 
+/** Server-level guidance sent to MCP clients at initialize (see app/mcp/route.ts). */
+export const SERVER_INSTRUCTIONS = `This server does the groceries on labellevie.com, a French online grocery store, up to a ready-to-pay basket. It never places, books or pays for an order: the user reviews and pays on labellevie.com themselves.
+
+Typical flow:
+  1. check_postal_coverage: confirm the delivery postal code is served, with its shipping fee and free-shipping threshold.
+  2. Find product ids: search_products (narrow it with a categoryId from browse_categories). For repeat shopping, list_usual_products, list_favorites, or list_recent_orders then get_order_products give ids from the account's history; reorder adds a whole past order.
+  3. Build the basket with add_to_cart and remove_from_cart; view_cart shows the lines and totals.
+  4. get_delivery_slots, then prepare_checkout with the postal code (and a slotKey): a ready-to-pay summary with the basket URL to give the user.
+
+Accounts. Catalog, basket, coverage, slot and checkout tools work without an account, on a guest basket kept per caller. Once an account is connected, the same tools act on that account's real labellevie.com basket. verify_promo, the order-history tools and the favorites tools require a connected account; without one they reply with a prompt to call connect_account. connect_account returns a one-time link (valid 10 minutes, single use, destroyed after 5 failed logins) where the user types their La Belle Vie password themselves: never ask for the password in chat. connection_status says which account is connected; disconnect_account deletes its stored credentials. Calling this server at all requires the "groceries" scope (static bearer token or an allowlisted OAuth sign-in).
+
+Limits:
+  - search_products is paginated (perPage 1-100, default 25). The text lists at most 25 products; structuredContent carries the whole page. categoryId filtering runs after the store paginates, so a filtered page can be empty while a later page matches.
+  - browse_categories returns at most 80 categories, or 40 name matches.
+  - list_favorites expands at most 10 lists; pass listId for the others.
+  - empty_cart clears the whole basket and cannot be undone.
+  - Each request is cut off after 60 seconds.
+
+It cannot: place or pay for an order, book a delivery slot, change the delivery address, create a La Belle Vie account, or modify past orders.`;
+
+/** Annotations shared by tools that only read from labellevie.com. */
+const READ_ONLY_REMOTE = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const;
+
 /**
  * Register every La Belle Vie tool on the MCP server. There is intentionally
  * no tool that places or pays for an order — automation stops at a ready cart.
@@ -88,11 +116,12 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Search products',
       description:
-        'Search the La Belle Vie catalog by keyword. Returns matching products with id, name, price, unit, stock, sale info and category names. Use the returned product id with add_to_cart. Keyword search can conflate meanings (e.g. "banane" returns fresh bananas AND banana-flavored candy) — pass a categoryId from browse_categories to keep only products in that category (and its subcategories).',
+        'Search the La Belle Vie catalog by keyword. Returns matching products with id, name, price, unit, stock, sale info and category names, plus the total found and page/totalPages. Use the returned product id with add_to_cart. Keyword search can conflate meanings (e.g. "banane" returns fresh bananas AND banana-flavored candy) — pass a categoryId from browse_categories to keep only products in that category (and its subcategories). Paginated: perPage up to 100 (default 25); the text lists at most 25 products, structuredContent has the full page. Works without a connected account.',
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({
-        query: z.string().min(1).describe('Search keywords, e.g. "banane bio"'),
-        page: z.number().int().min(1).optional().describe('1-based page number'),
-        perPage: z.number().int().min(1).max(100).optional().describe('Results per page (default 25)'),
+        query: z.string().min(1).describe('Search keywords, French product names work best, e.g. "banane bio"'),
+        page: z.number().int().min(1).optional().describe('1-based page number, e.g. 2 for the second page (default 1)'),
+        perPage: z.number().int().min(1).max(100).optional().describe('Results per page, 1-100 (default 25)'),
         categoryId: z
           .number()
           .int()
@@ -132,10 +161,11 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Browse categories',
       description:
-        "Explore the store's category taxonomy. No arguments → the top-level aisles (Primeur, Fromagerie, Épicerie…); parentId → that category's subcategories; query → find categories by name (accent-insensitive) with breadcrumb paths. Use a returned id as categoryId in search_products to filter results.",
+        "Explore the store's category taxonomy. No arguments → the top-level aisles (Primeur, Fromagerie, Épicerie…); parentId → that category's subcategories; query → find categories by name (accent-insensitive) with breadcrumb paths. Returns each category's id, name, product count and whether it has subcategories; at most 80 categories (or 40 name matches) per call, flagged as truncated beyond that. Use a returned id as categoryId in search_products to filter results.",
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({
-        parentId: z.number().int().optional().describe('Category id whose subcategories to list'),
-        query: z.string().min(1).optional().describe('Find categories by name, e.g. "fromage"'),
+        parentId: z.number().int().optional().describe('Category id (from a previous browse_categories call) whose subcategories to list'),
+        query: z.string().min(1).optional().describe('Find categories by name, accent-insensitive, e.g. "fromage"'),
       }),
     },
     async ({ parentId, query }, ctx) => {
@@ -171,7 +201,9 @@ export function registerTools(server: McpServer): void {
     'view_cart',
     {
       title: 'View cart',
-      description: 'Show the current basket: line items, quantities and totals.',
+      description:
+        "Show the current basket. Returns each line (product id, name, quantity, line price), the item count, the subtotal and the amount to pay. Use it to check the basket after add_to_cart or remove_from_cart and before prepare_checkout. Without a connected account this is the caller's guest basket; with one, the account's labellevie.com basket.",
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
@@ -191,10 +223,14 @@ export function registerTools(server: McpServer): void {
     'add_to_cart',
     {
       title: 'Add to cart',
-      description: 'Add a product to the basket by product id. Quantity defaults to 1.',
+      description:
+        'Add a quantity of one product to the basket by product id. The quantity is added to what is already there, so calling it twice adds twice. Returns the updated cart (lines, item count, subtotal). Get product ids from search_products, list_usual_products, list_favorites or get_order_products; use reorder to add a whole past order at once.',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
-        productId: z.string().describe('Product id from search_products'),
-        quantity: z.number().int().min(1).optional().describe('Quantity to add (default 1)'),
+        productId: z
+          .string()
+          .describe('Product id from search_products, list_usual_products, list_favorites or get_order_products'),
+        quantity: z.number().int().min(1).optional().describe('Units to add, at least 1 (default 1)'),
       }),
     },
     async ({ productId, quantity }, ctx) => {
@@ -212,10 +248,12 @@ export function registerTools(server: McpServer): void {
     'remove_from_cart',
     {
       title: 'Remove from cart',
-      description: 'Remove a product (or reduce its quantity) from the basket by product id.',
+      description:
+        'Remove units of one product from the basket by product id (default 1 unit). Returns the updated cart (lines, item count, subtotal). Use view_cart first to see the product ids and quantities in the basket; use empty_cart only when the user wants everything gone.',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
-        productId: z.string().describe('Product id to remove'),
-        quantity: z.number().int().min(1).optional().describe('Quantity to remove (default 1)'),
+        productId: z.string().describe('Product id of a basket line, as shown by view_cart'),
+        quantity: z.number().int().min(1).optional().describe('Units to remove, at least 1 (default 1)'),
       }),
     },
     async ({ productId, quantity }, ctx) => {
@@ -231,7 +269,9 @@ export function registerTools(server: McpServer): void {
     'empty_cart',
     {
       title: 'Empty cart',
-      description: 'Remove all items from the basket.',
+      description:
+        'Remove every item from the basket in one call. Irreversible: the previous contents are not saved anywhere, so they can only be rebuilt with add_to_cart or reorder. Use it only when the user explicitly asks to clear the basket; to drop single items use remove_from_cart. Returns the cart after emptying (normally 0 items).',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
@@ -247,8 +287,10 @@ export function registerTools(server: McpServer): void {
     'check_postal_coverage',
     {
       title: 'Check delivery coverage',
-      description: 'Check whether a French postal code is served, with base shipping fee and free-shipping threshold.',
-      inputSchema: z.object({ postalCode: z.string().describe('French postal code, e.g. "75011"') }),
+      description:
+        'Check whether a French postal code is delivered to. Returns covered (true/false), the city name, the base shipping fee and the basket amount from which shipping is free. Call it first for a new address; get_delivery_slots then gives the actual delivery windows. Works without a connected account.',
+      annotations: READ_ONLY_REMOTE,
+      inputSchema: z.object({ postalCode: z.string().describe('French 5-digit postal code, e.g. "75011"') }),
     },
     async ({ postalCode }, ctx) => {
       const identity = identityOf(ctx);
@@ -266,9 +308,11 @@ export function registerTools(server: McpServer): void {
     'get_delivery_slots',
     {
       title: 'Get delivery slots',
-      description: 'List available delivery windows for a postal code, with times and fees.',
+      description:
+        "List the delivery windows currently offered for a postal code. Returns each slot's key, label (day and time), fee and whether it is free, plus any delivery warning from the store. It does not book anything: pass a slot key to prepare_checkout as slotKey. Use check_postal_coverage first if the code may not be served.",
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({
-        postalCode: z.string().describe('French postal code, e.g. "75011"'),
+        postalCode: z.string().describe('French 5-digit postal code, e.g. "75011"'),
       }),
     },
     async ({ postalCode }, ctx) => {
@@ -290,8 +334,10 @@ export function registerTools(server: McpServer): void {
     'verify_promo',
     {
       title: 'Verify promo code',
-      description: 'Check whether a promo code is valid for the account (requires a connected account).',
-      inputSchema: z.object({ code: z.string().min(1).describe('Promo code to verify') }),
+      description:
+        "Check whether a promo code is valid for the connected account (requires a connected account; use connect_account first). Returns valid (true/false), the discount when the store reports one, and the store's message when the code is refused.",
+      annotations: READ_ONLY_REMOTE,
+      inputSchema: z.object({ code: z.string().min(1).describe('Promo code exactly as the user gave it, e.g. "BIENVENUE10"') }),
     },
     async ({ code }, ctx) => {
       const identity = identityOf(ctx);
@@ -310,7 +356,8 @@ export function registerTools(server: McpServer): void {
     {
       title: 'List recent orders',
       description:
-        "List the account's recent orders (id, date, number of products) — the starting point for rebuilding a basket from past purchases (requires a connected account). Pass an id to get_order_products to see what it contained, or to reorder to add all of it to the basket.",
+        "List the account's recent orders — the starting point for rebuilding a basket from past purchases (requires a connected account). Returns each order's id, date, number of products and total when the store provides them. Pass an id to get_order_products to see what it contained, or to reorder to add all of it to the basket.",
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
@@ -337,7 +384,8 @@ export function registerTools(server: McpServer): void {
     {
       title: 'List usual products',
       description:
-        "List the account's most frequently ordered products with id, price, unit and aisle (requires a connected account). Recurring-purchase shortcut: pick ids from here and pass them to add_to_cart or add_to_favorites.",
+        "List the account's most frequently ordered products (requires a connected account). Returns each product's id, name, price, unit and aisle. Recurring-purchase shortcut: use it instead of search_products when the user wants \"the usual\", then pass ids to add_to_cart or add_to_favorites.",
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
@@ -361,8 +409,9 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Reorder a past order',
       description:
-        'Add every product from a past order into the current basket (requires a connected account). Use list_recent_orders to find an order id, and get_order_products to preview its items first. Does not place or pay for the order.',
-      inputSchema: z.object({ orderId: z.string().describe('Order id from list_recent_orders') }),
+        'Add every product from a past order into the current basket, at the quantities ordered then, on top of what is already there (requires a connected account). Returns the products requested, added and failed (with the reason), and the updated cart. Use list_recent_orders to find an order id, and get_order_products to preview its items first. Does not place or pay for the order.',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      inputSchema: z.object({ orderId: z.string().describe('Order id exactly as returned by list_recent_orders') }),
     },
     async ({ orderId }, ctx) => {
       const identity = identityOf(ctx);
@@ -382,9 +431,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Get the products of a past order',
       description:
-        'List every product of one past order with quantity, current price, unit and whether it can still be ordered (requires a connected account). Use list_recent_orders to find the order id, then add_to_cart for the products you want — or reorder to take the whole order.',
+        "List every product of one past order (requires a connected account). Returns the order's status, dates and total, and for each product its id, name, quantity, current price, unit and whether it can still be ordered. Use list_recent_orders to find the order id, then add_to_cart for the products you want — or reorder to take the whole order.",
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({
-        orderId: z.string().min(1).describe('Order id from list_recent_orders'),
+        orderId: z.string().min(1).describe('Order id exactly as returned by list_recent_orders'),
       }),
     },
     async ({ orderId }, ctx) => {
@@ -419,9 +469,14 @@ export function registerTools(server: McpServer): void {
     {
       title: 'List favorites lists',
       description:
-        "List the account's favorites lists (the site's \"listes favoris\") with their products: id, name, price, unit and availability (requires a connected account). Recurring-purchase shortcut: pass product ids to add_to_cart. Pass listId to expand a single list.",
+        "List the account's favorites lists (the site's \"listes favoris\") (requires a connected account). Returns each list's id, name and products (id, name, quantity, price, unit, availability). At most 10 lists are expanded per call, flagged as truncated beyond that; pass listId to expand a single list. Recurring-purchase shortcut: pass product ids to add_to_cart.",
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({
-        listId: z.string().min(1).optional().describe('Only this favorites list (id from a previous call)'),
+        listId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Only this favorites list (id from a previous list_favorites call); omit for all lists'),
       }),
     },
     async ({ listId }, ctx) => {
@@ -455,16 +510,17 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Add a product to favorites',
       description:
-        "Add a product to one of the account's favorites lists (requires a connected account). With neither listId nor listName the account's only list is used (created as \"Mes favoris\" if there is none); listName finds or creates a list by name. Adding a product that is already on the list is a no-op. Does not touch the basket.",
+        "Add a product to one of the account's favorites lists (requires a connected account). With neither listId nor listName the account's only list is used (created as \"Mes favoris\" if there is none); listName finds or creates a list by name. Adding a product that is already on the list is a no-op. Returns the list used, whether it was created, whether the product was already there, and the list's products. Does not touch the basket — use add_to_cart for that.",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
       inputSchema: z.object({
         productId: z.string().min(1).describe('Product id from search_products, list_usual_products or get_order_products'),
-        listId: z.string().min(1).optional().describe('Favorites list id from list_favorites'),
+        listId: z.string().min(1).optional().describe('Favorites list id from list_favorites; takes precedence over listName'),
         listName: z
           .string()
           .min(1)
           .max(100)
           .optional()
-          .describe('Favorites list name; created when no list with that name exists'),
+          .describe('Favorites list name, 1-100 characters, e.g. "Petit déjeuner"; created when no list with that name exists'),
       }),
     },
     async ({ productId, listId, listName }, ctx) => {
@@ -494,9 +550,10 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Remove a product from favorites',
       description:
-        'Remove a product from a favorites list (requires a connected account). Without listId the product is removed from every list it is on. Removing a product that is on no list is a no-op. Does not touch the basket.',
+        'Remove a product from a favorites list (requires a connected account). Without listId the product is removed from every list it is on. Removing a product that is on no list is a no-op. Returns the lists it was removed from (empty when nothing changed). Does not touch the basket — use remove_from_cart for that.',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
       inputSchema: z.object({
-        productId: z.string().min(1).describe('Product id to remove'),
+        productId: z.string().min(1).describe('Product id to remove, as shown by list_favorites'),
         listId: z.string().min(1).optional().describe('Favorites list id from list_favorites; omit for all lists'),
       }),
     },
@@ -521,10 +578,14 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Prepare checkout (ready-to-pay summary)',
       description:
-        'Assemble a ready-to-pay summary for the current basket: totals, delivery coverage, a recommended delivery slot and a stock check, plus the basket URL. IMPORTANT: this does NOT place or pay for the order — the user completes payment themselves on labellevie.com.',
+        'Assemble a ready-to-pay summary for the current basket — the last step, after view_cart and get_delivery_slots. Returns the cart totals, delivery coverage, a recommended delivery slot (the requested slotKey, else the earliest available), all available slots, a stock check, notes and the basket URL to give the user. IMPORTANT: this does NOT place or pay for the order and does not book the slot — the user completes payment themselves on labellevie.com.',
+      annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({
-        postalCode: z.string().describe('Delivery postal code, e.g. "75011"'),
-        slotKey: z.string().optional().describe('Preferred delivery slot key from get_delivery_slots'),
+        postalCode: z.string().describe('Delivery postal code, French 5 digits, e.g. "75011"'),
+        slotKey: z
+          .string()
+          .optional()
+          .describe('Preferred delivery slot key from get_delivery_slots; omit to get the earliest available slot'),
       }),
     },
     async ({ postalCode, slotKey }, ctx) => {
@@ -552,7 +613,8 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Connect your La Belle Vie account',
       description:
-        'Get a one-time secure link to a login page where you enter your La Belle Vie email and password yourself — credentials never pass through this chat. The link is short-lived and single-use. Completing it replaces any previously connected account.',
+        'Get a one-time secure link to a login page where you enter your La Belle Vie email and password yourself — credentials never pass through this chat. The link expires after 10 minutes, works once, and is destroyed after 5 failed logins. Returns the link URL and its expiry time. Use it when a tool reports the account is not connected; check connection_status first to avoid replacing an account, since completing the link replaces any previously connected one.',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
@@ -585,7 +647,9 @@ export function registerTools(server: McpServer): void {
     'connection_status',
     {
       title: 'Connection status',
-      description: 'Show whether a La Belle Vie account is connected for this caller, and which one.',
+      description:
+        'Show whether a La Belle Vie account is connected for this caller. Returns connected (true/false) and, when connected, the account email, when it was connected and when it was last used. Use it before connect_account or disconnect_account, or when an account-only tool says the account is not connected.',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
@@ -614,7 +678,8 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Disconnect account',
       description:
-        'Disconnect the La Belle Vie account for this caller and delete its stored (encrypted) credentials and session.',
+        'Disconnect the La Belle Vie account for this caller and delete its stored (encrypted) credentials and session. Irreversible: reconnecting needs a new connect_account link and the password again. Use it only when the user asks to disconnect or switch accounts. Returns disconnected (true when an account was connected).',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       inputSchema: z.object({}),
     },
     async (_args, ctx) => {
