@@ -25,12 +25,19 @@ export async function createLinkCode(identity: string): Promise<{ code: string; 
   return { code, expiresAt: Date.now() + LINK_CODE_TTL_SECONDS * 1000 };
 }
 
-/** Load a link if it is still redeemable (exists, attempts not exhausted). */
+/** Seconds left before the link's fixed expiry (createdAt + TTL); <= 0 once expired. */
+function remainingTtlSeconds(record: LinkRecord): number {
+  return Math.ceil(LINK_CODE_TTL_SECONDS - (Date.now() - record.createdAt) / 1000);
+}
+
+/** Load a link if it is still redeemable (exists, not expired, attempts not exhausted). */
 export async function getLinkRecord(code: string): Promise<LinkRecord | null> {
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(code)) return null; // reject junk before hitting the store
   const value = await getSessionStore().load(linkKey(code));
   if (!value || typeof value !== 'object') return null;
   const record = value as LinkRecord;
+  // The memory and file stores ignore TTLs, so expiry is enforced here too.
+  if (remainingTtlSeconds(record) <= 0) return null;
   return record.attempts >= LINK_MAX_ATTEMPTS ? null : record;
 }
 
@@ -46,7 +53,8 @@ export async function recordFailedAttempt(code: string): Promise<LinkRecord | nu
     await consumeLinkCode(code);
     return null;
   }
-  await getSessionStore().save(linkKey(code), updated, LINK_CODE_TTL_SECONDS);
+  // Keep the original expiry: a failed attempt must not extend the link's life.
+  await getSessionStore().save(linkKey(code), updated, Math.max(1, remainingTtlSeconds(updated)));
   return updated;
 }
 

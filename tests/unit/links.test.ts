@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LINK_MAX_ATTEMPTS } from '../../src/lbv/config';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LINK_CODE_TTL_SECONDS, LINK_MAX_ATTEMPTS } from '../../src/lbv/config';
 import {
   consumeLinkCode,
   createLinkCode,
@@ -66,5 +66,44 @@ describe('one-time connect links', () => {
     expect(await recordFailedAttempt(code)).toBeNull();
     expect(await getLinkRecord(code)).toBeNull();
     expect(await recordFailedAttempt(code)).toBeNull();
+  });
+
+  describe('fixed expiry', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('stops redeeming at createdAt + TTL, even on a store that ignores TTLs', async () => {
+      vi.useFakeTimers();
+      const { code, expiresAt } = await createLinkCode('sub:a');
+      vi.setSystemTime(expiresAt - 1000);
+      expect(await getLinkRecord(code)).not.toBeNull();
+      vi.setSystemTime(expiresAt + 1000);
+      expect(await getLinkRecord(code)).toBeNull();
+    });
+
+    it('does not extend the expiry after a failed attempt', async () => {
+      vi.useFakeTimers();
+      const { code, expiresAt } = await createLinkCode('sub:a');
+      vi.setSystemTime(expiresAt - 60_000);
+      expect((await recordFailedAttempt(code))?.attempts).toBe(1);
+      vi.setSystemTime(expiresAt + 1000);
+      expect(await getLinkRecord(code)).toBeNull();
+    });
+
+    it('re-saves a failed attempt with only the remaining TTL', async () => {
+      vi.useFakeTimers();
+      const store = {
+        load: vi.fn(),
+        save: vi.fn(async (_key: string, _value: unknown, _ttlSeconds?: number) => {}),
+        clear: vi.fn(async () => {}),
+      };
+      setSessionStore(store);
+      const { code } = await createLinkCode('sub:a');
+      store.load.mockResolvedValue(store.save.mock.calls[0]?.[1]);
+      vi.advanceTimersByTime(4 * 60_000);
+      await recordFailedAttempt(code);
+      expect(store.save.mock.calls[1]?.[2]).toBe(LINK_CODE_TTL_SECONDS - 4 * 60);
+    });
   });
 });
