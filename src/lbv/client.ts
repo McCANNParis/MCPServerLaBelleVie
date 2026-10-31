@@ -102,6 +102,8 @@ export interface ListFavoritesResult {
   lists: FavoriteListWithProducts[];
   /** True when more lists exist than MAX_FAVORITE_LISTS_EXPANDED. */
   truncated: boolean;
+  /** Lists beyond the cap, without their products, so their ids can be passed as listId. */
+  unexpanded: FavoriteList[];
 }
 
 export interface AddToFavoritesResult {
@@ -407,7 +409,8 @@ export class LbvClient {
     for (const list of expanded) {
       out.push({ ...list, products: await this.getFavoriteListProducts(list.id) });
     }
-    return { lists: out, truncated: selected.length > expanded.length };
+    const unexpanded = selected.slice(MAX_FAVORITE_LISTS_EXPANDED);
+    return { lists: out, truncated: unexpanded.length > 0, unexpanded };
   }
 
   async createFavoriteList(name: string): Promise<FavoriteList> {

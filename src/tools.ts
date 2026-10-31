@@ -92,7 +92,7 @@ Accounts. Catalog, basket, coverage, slot and checkout tools work without an acc
 Limits:
   - search_products is paginated (perPage 1-100, default 25). The text lists at most 25 products; structuredContent carries the whole page. categoryId filtering runs after the store paginates, so a filtered page can be empty while a later page matches.
   - browse_categories returns at most 80 categories, or 40 name matches.
-  - list_favorites expands at most 10 lists; pass listId for the others.
+  - list_favorites expands at most 10 lists; the others are listed by id and name only, and passing one as listId expands it.
   - empty_cart clears the whole basket and cannot be undone.
   - Each request is cut off after 60 seconds.
 
@@ -469,7 +469,7 @@ export function registerTools(server: McpServer): void {
     {
       title: 'List favorites lists',
       description:
-        "List the account's favorites lists (the site's \"listes favoris\") (requires a connected account). Returns each list's id, name and products (id, name, quantity, price, unit, availability). At most 10 lists are expanded per call, flagged as truncated beyond that; pass listId to expand a single list. Recurring-purchase shortcut: pass product ids to add_to_cart.",
+        "List the account's favorites lists (the site's \"listes favoris\") (requires a connected account). Returns each list's id, name and products (id, name, quantity, price, unit, availability). At most 10 lists are expanded per call; any others come back in unexpanded with their id, name and product count only (truncated is true), and passing one of those ids as listId expands that list. Recurring-purchase shortcut: pass product ids to add_to_cart.",
       annotations: READ_ONLY_REMOTE,
       inputSchema: z.object({
         listId: z
@@ -490,7 +490,10 @@ export function registerTools(server: McpServer): void {
         const text =
           `${result.lists.length} favorites list(s).\n` +
           (sections.join('\n\n') || '(none) — add_to_favorites creates one.') +
-          (result.truncated ? '\n(More lists exist; pass listId to expand a specific one.)' : '');
+          (result.unexpanded.length
+            ? `\n\nNot expanded (pass listId to see products):\n` +
+              result.unexpanded.map((l) => `• ${l.name} (id ${l.id}) — ${l.productIds.length} product(s)`).join('\n')
+            : '');
         return ok(text, {
           lists: result.lists.map((l) => ({
             id: l.id,
@@ -500,6 +503,12 @@ export function registerTools(server: McpServer): void {
             products: l.products,
           })),
           truncated: result.truncated,
+          unexpanded: result.unexpanded.map((l) => ({
+            id: l.id,
+            name: l.name,
+            type: l.type,
+            productCount: l.productIds.length,
+          })),
         });
       });
     },
