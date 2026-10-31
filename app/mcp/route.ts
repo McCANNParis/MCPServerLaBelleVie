@@ -1,6 +1,6 @@
 import { createMcpHandler, withMcpAuth } from 'mcp-handler';
 import { verifyToken } from '../../src/auth';
-import { registerTools } from '../../src/tools';
+import { registerTools, SERVER_INSTRUCTIONS } from '../../src/tools';
 
 // Streamable-HTTP MCP endpoint, mounted at /mcp. mcp-handler v2 no longer routes
 // by transport segment — the handler serves whatever route it is mounted on, so
@@ -13,6 +13,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: 'labellevie-mcp', version: '0.1.0' },
     capabilities: { tools: {} },
+    instructions: SERVER_INSTRUCTIONS,
     verboseLogs: process.env.NODE_ENV === 'development',
   },
 );

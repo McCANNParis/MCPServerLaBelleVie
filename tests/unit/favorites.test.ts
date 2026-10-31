@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { LbvClient } from '../../src/lbv/client';
 import {
   buildCreateListPayload,
   buildFavoriteListPath,
@@ -110,5 +111,30 @@ describe('list name matching', () => {
     expect(describeLists(parseFavoriteLists(listsJson))).toBe(
       'Mes favoris (id 501), Courses de la semaine (id 502)',
     );
+  });
+});
+
+describe('LbvClient.listFavorites', () => {
+  const list = (n: number) => ({ id: String(n), name: `L${n}`, type: 'default', order: n, productIds: [String(n)] });
+
+  it('expands the first 10 lists and returns the rest by id, without fetching their products', async () => {
+    const client = new LbvClient();
+    vi.spyOn(client, 'listFavoriteLists').mockResolvedValue(Array.from({ length: 12 }, (_, i) => list(i + 1)));
+    const fetchProducts = vi.spyOn(client, 'getFavoriteListProducts').mockResolvedValue([]);
+
+    const result = await client.listFavorites();
+
+    expect(result.lists.map((l) => l.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
+    expect(result.truncated).toBe(true);
+    expect(result.unexpanded.map((l) => l.id)).toEqual(['11', '12']);
+    expect(fetchProducts).toHaveBeenCalledTimes(10);
+  });
+
+  it('reports nothing unexpanded at or under the cap', async () => {
+    const client = new LbvClient();
+    vi.spyOn(client, 'listFavoriteLists').mockResolvedValue([list(1), list(2)]);
+    vi.spyOn(client, 'getFavoriteListProducts').mockResolvedValue([]);
+
+    expect(await client.listFavorites()).toMatchObject({ truncated: false, unexpanded: [] });
   });
 });

@@ -42,7 +42,11 @@ const { fakeClient } = vi.hoisted(() => {
           { productId: '424242', name: 'Produit retiré', quantity: 2, price: null, unit: null, available: false },
         ],
       }),
-      listFavorites: async () => ({ lists: [{ ...favoriteList, products: [favoriteProduct] }], truncated: false }),
+      listFavorites: async () => ({
+        lists: [{ ...favoriteList, products: [favoriteProduct] }],
+        truncated: false,
+        unexpanded: [] as (typeof favoriteList)[],
+      }),
       addToFavorites: async (productId: string) => ({
         productId,
         list: favoriteList,
@@ -271,6 +275,21 @@ describe('MCP tool contract', () => {
       lists: [{ id: '7', name: 'Mes favoris', productCount: 1 }],
     });
     expect(JSON.stringify(res.content)).toContain('Banane BIO');
+  });
+
+  it('list_favorites gives the id of every list beyond the 10 it expands', async () => {
+    vi.spyOn(fakeClient, 'listFavorites').mockResolvedValueOnce({
+      lists: [],
+      truncated: true,
+      unexpanded: [{ id: '42', name: 'Apéro', type: 'default', order: 11, productIds: ['1', '2'] }],
+    });
+    const res = await client.callTool({ name: 'list_favorites', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    expect(res.structuredContent).toMatchObject({
+      truncated: true,
+      unexpanded: [{ id: '42', name: 'Apéro', type: 'default', productCount: 2 }],
+    });
+    expect(JSON.stringify(res.content)).toContain('Apéro (id 42) — 2 product(s)');
   });
 
   it('add_to_favorites reports the list it used and whether it created it', async () => {

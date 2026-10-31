@@ -17,7 +17,7 @@ vi.mock('../../src/runtime', async () => {
   const { LbvNotAuthenticatedError } = await import('../../src/lbv/errors');
   const fakeClient = {
     listRecentOrders: async () => [],
-    listFavorites: async () => ({ lists: [], truncated: false }),
+    listFavorites: async () => ({ lists: [], truncated: false, unexpanded: [] }),
     getCart: async () => ({
       itemCount: 0,
       lines: [],
