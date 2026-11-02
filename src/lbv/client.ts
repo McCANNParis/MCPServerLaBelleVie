@@ -203,6 +203,7 @@ export class LbvClient {
       const detail = err instanceof Error ? err.message : String(err);
       throw new Error(
         `Could not load the category taxonomy (${detail}). You can still use search_products without categoryId.`,
+        { cause: err },
       );
     }
   }

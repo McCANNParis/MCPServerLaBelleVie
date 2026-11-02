@@ -33,18 +33,18 @@
     "next": "^16.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tough-cookie": "^5.1.2",
+    "tough-cookie": "^6.0.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19.0.0",
-    "eslint": "^9.39.0",
-    "globals": "^15.14.0",
+    "eslint": "^10.9.0",
+    "globals": "^17.11.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.66.0",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   }
 }
